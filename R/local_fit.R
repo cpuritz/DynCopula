@@ -4,17 +4,27 @@
 #'
 #' Performs Local Fit Gaussian
 #'
-#' @param FX FX
-#' @param FXm FXm
+#' @param FX Matrix of pseudo-observations F_i(X_i).
+#' @param FXm Matrix of left limits of distribution functions F_i(X_i - 1).
+#' If \code{NULL}, it is assumed that all margins are continuous.
 #' @param x x
 #' @param x0 x0
-#' @param band band
-#' @param scale scale
-#' @param R0 R0
-#' @param optMethod optMethod
-#' @param control control
-#' @param cores cores
-#' @param cores2 cores2
+#' @param band Kernel bandwidth
+#' @param scale Scale factor used for unconstrained parametrization of
+#' correlation matrices.
+#' @param R0 Fraction of neighbors to use to estimate the initial correlation
+#' matrix. Default is \code{0.05}. Must be between \code{0} (exclusive) and
+#' \code{1} (inclusive).
+#' @param optMethod Optimization method. Either \code{"SGD"} or \code{"LBFGS"}.
+#' \code{"SGD"} implements stochastic gradient descent with gradients computed
+#' using automatic differentiation. \code{"LBFGS"} implements the quasi-Newton
+#' limited memory BFGS with gradients estimated numerically.
+#' @param control Control parameters for optimization.
+#' @param cores Number of cores to use for parallel optimization. Parallelized
+#' over \code{x0}.
+#' @param cores2 If using \code{"LBFGS"}, each optimization step can be
+#' parallelized, in addition to parallelization over \code{x0}. The total number
+#' of cores used is \code{cores * cores2}.
 #'
 #' @return Value
 #'
@@ -134,19 +144,7 @@ local_fit_gaussian <- function(FX,
 
 #' Local Fit Gaussian
 #'
-#' Performs Local Fit Gaussian
-#'
-#' @param FX FX
-#' @param FXm FXm
-#' @param x x
-#' @param x0 x0
-#' @param band band
-#' @param scale scale
-#' @param R0 R0
-#' @param optMethod optMethod
-#' @param control control
-#' @param cores cores
-#' @param cores2 cores2
+#' @inheritParams local_fit_gaussian
 #'
 #' @return Value
 local_fit_discrete_gaussian <- function(FX,
@@ -292,18 +290,7 @@ local_fit_discrete_gaussian <- function(FX,
 
 #' Local Fit Gaussian
 #'
-#' Performs Local Fit Gaussian
-#'
-#' @param FX FX
-#' @param x x
-#' @param x0 x0
-#' @param band band
-#' @param scale scale
-#' @param R0 R0
-#' @param optMethod optMethod
-#' @param control control
-#' @param cores cores
-#' @param cores2 cores2
+#' @inheritParams local_fit_gaussian
 #'
 #' @return Value
 local_fit_continuous_gaussian <- function(FX,
@@ -432,15 +419,16 @@ local_fit_continuous_gaussian <- function(FX,
 
 ###############################################################################
 
-#' Likelihood
+#' Log-likelihood
 #'
-#' Compute likelihood
+#' Compute log-likelihood
 #'
-#' @param FX FX
-#' @param FXm FXm
-#' @param R R
+#' @param FX Matrix of pseudo-observations F_i(X_i).
+#' @param FXm Matrix of left limits of distribution functions F_i(X_i - 1).
+#' If \code{NULL}, it is assumed that all margins are continuous.
+#' @param R Correlation matrix.
 #'
-#' @return Value
+#' @return Log-likelihood
 #'
 #' @export
 loglik <- function(FX, FXm = NULL, R)  {
@@ -450,8 +438,12 @@ loglik <- function(FX, FXm = NULL, R)  {
     } else {
         NXm <- stats::qnorm(FXm)
         ll <- sapply(seq(dim(FX)[1]), function(i) {
-            TruncatedNormal::mvNcdf(l = NXm[i, ], u = NX[i, ], Sig = R,
-                                    n = 1e3)$prob
+            TruncatedNormal::mvNcdf(
+                l = NXm[i, ],
+                u = NX[i, ],
+                Sig = R,
+                n = 1e3
+            )$prob
         })
     }
     return(sum(ll))

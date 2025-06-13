@@ -2,20 +2,21 @@
 % Please edit documentation in R/local_fit.R
 \name{loglik}
 \alias{loglik}
-\title{Likelihood}
+\title{Log-likelihood}
 \usage{
 loglik(FX, FXm = NULL, R)
 }
 \arguments{
-\item{FX}{FX}
+\item{FX}{Matrix of pseudo-observations F_i(X_i).}
 
-\item{FXm}{FXm}
+\item{FXm}{Matrix of left limits of distribution functions F_i(X_i - 1).
+If \code{NULL}, it is assumed that all margins are continuous.}
 
-\item{R}{R}
+\item{R}{Correlation matrix.}
 }
 \value{
-Value
+Log-likelihood
 }
 \description{
-Compute likelihood
+Compute log-likelihood
 }

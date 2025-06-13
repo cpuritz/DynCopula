@@ -18,29 +18,38 @@ local_fit_continuous_gaussian(
 )
 }
 \arguments{
-\item{FX}{FX}
+\item{FX}{Matrix of pseudo-observations F_i(X_i).}
 
 \item{x}{x}
 
 \item{x0}{x0}
 
-\item{band}{band}
+\item{band}{Kernel bandwidth}
 
-\item{scale}{scale}
+\item{scale}{Scale factor used for unconstrained parametrization of
+correlation matrices.}
 
-\item{R0}{R0}
+\item{R0}{Fraction of neighbors to use to estimate the initial correlation
+matrix. Default is \code{0.05}. Must be between \code{0} (exclusive) and
+\code{1} (inclusive).}
 
-\item{optMethod}{optMethod}
+\item{optMethod}{Optimization method. Either \code{"SGD"} or \code{"LBFGS"}.
+\code{"SGD"} implements stochastic gradient descent with gradients computed
+using automatic differentiation. \code{"LBFGS"} implements the quasi-Newton
+limited memory BFGS with gradients estimated numerically.}
 
-\item{control}{control}
+\item{control}{Control parameters for optimization.}
 
-\item{cores}{cores}
+\item{cores}{Number of cores to use for parallel optimization. Parallelized
+over \code{x0}.}
 
-\item{cores2}{cores2}
+\item{cores2}{If using \code{"LBFGS"}, each optimization step can be
+parallelized, in addition to parallelization over \code{x0}. The total number
+of cores used is \code{cores * cores2}.}
 }
 \value{
 Value
 }
 \description{
-Performs Local Fit Gaussian
+Local Fit Gaussian
 }
