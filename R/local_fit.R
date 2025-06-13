@@ -121,11 +121,12 @@ local_fit_gaussian <- function(FX,
     colnames(Hhat) <- paste0("eta", ix_lab)
     colnames(Rhat) <- paste0("rho", ix_lab)
 
-    #x0 <- x0 * (max_x - min_x) + min_x
     res <- c(res[setdiff(names(res), "eta_vals")],
-             list(x0 = x0,
+             list(x = x * (max_x - min_x) + min_x,
+                  x0 = x0 * (max_x - min_x) + min_x,
                   eta = data.frame(Hhat),
-                  rho = data.frame(Rhat)))
+                  rho = data.frame(Rhat),
+                  scale = scale))
     return(res)
 }
 
@@ -166,119 +167,124 @@ local_fit_discrete_gaussian <- function(FX,
     NX <- stats::qnorm(FX)
     NXm <- stats::qnorm(FXm)
 
+    lbfgs_optim <- function(x0i) {
+        # Use points nearby to estimate initial correlation matrix
+        dx <- x - x0i
+        max_thr <- sort(abs(dx))[min(length(dx), dim(NX)[2])]
+        thr <- max(stats::quantile(abs(dx), R0), max_thr)
+        NX_loc <- NX[which(abs(dx) <= thr), ]
+
+        eta0 <- cor2vec(stats::cor(NX_loc, method = "pearson"), scale)
+        par0 <- c(eta0, rep(0, length(eta0)))
+
+        # Negative local log likelihood function
+        loglik <- function(par) {
+            par <- as.numeric(par)
+
+            # Epanechnikov kernel weights
+            wgt <- 3/(4 * band) * pmax(1 - (dx / band)^2, 0)
+
+            # Only compute densities when weight is nonzero
+            pos_ix <- which(wgt > 0)
+            P <- sapply(pos_ix, function(j) {
+                # Reconstruct correlation matrix
+                npar <- as.integer(length(par) / 2)
+                eta0 <- par[1:npar]
+                eta1 <- par[(npar + 1):(2 * npar)]
+                R <- vec2cor(eta0 + eta1 * dx[j], scale = scale)
+
+                if (min(eigen(R)$values) <= 0) {
+                    # Matrix is theoretically PD but may not be
+                    # numerically PD
+                    return(0)
+                } else {
+                    # Numerical evaluation of Gaussian CDF
+                    return(tryCatch(
+                        TruncatedNormal::mvNcdf(
+                            l = NXm[j, ],
+                            u = NX[j, ],
+                            Sig = R,
+                            n = 1e3
+                        )$prob,
+                        error = function(e) {
+                            # Error often thrown for poorly conditioned
+                            # matrices, return probability of 0
+                            0
+                        }
+                    ))
+                }
+            })
+            if (any(P <= 0)) {
+                # Probabilities are theoretically nonnegative but may
+                # be numerically negative. Return large number instead
+                # of infinity.
+                return(1e20)
+            } else {
+                return(-sum(wgt[pos_ix] * log(P)))
+            }
+        }
+
+        # Create inner cluster
+        cl <- parallel::makeCluster(cores2)
+        on.exit(parallel::stopCluster(cl))
+        parallel::clusterExport(
+            cl = cl,
+            varlist = c("vec2cor", "scale", "band", "NX", "NXm")
+        )
+
+        # Parallelized L-BFGS optimization
+        opt <- optimParallel::optimParallel(
+            par = par0,
+            fn = loglik,
+            parallel = list(cl = cl),
+            control = control
+        )
+        pbar()
+        return(opt$par[1:length(eta0)])
+    }
+
+    sgd_optim <- function(x0i) {
+        # Use points nearby to estimate initial correlation matrix
+        dx <- x - x0i
+        max_thr <- sort(abs(dx))[min(length(dx), dim(NX)[2])]
+        thr <- max(stats::quantile(abs(dx), R0), max_thr)
+        NX_loc <- NX[which(abs(dx) <= thr), ]
+
+        eta0 <- cor2vec(stats::cor(NX_loc, method = "pearson"), scale)
+        par0 <- c(eta0, rep(0, length(eta0)))
+
+        fit_discrete <- py_load()$fit_discrete
+        res <- fit_discrete(par0, dx, NX, NXm, scale, band, control)
+        pbar()
+
+        return(list(
+            par = res$opt[1:length(eta0)],
+            loss = res$hist,
+            convergence = res$convergence
+        ))
+    }
+
     progressr::with_progress({
         pbar <- progressr::progressor(along = x0)
         if (optMethod == "LBFGS") {
-            eta_vals <- future.apply::future_lapply(X = x0, function(x0i) {
-                ## Initial conditions
-                dx <- x - x0i
-                # Use points nearby to estimate initial correlation matrix
-                max_thr <- sort(abs(dx))[min(length(dx), dim(NX)[2])]
-                thr <- max(stats::quantile(abs(dx), R0), max_thr)
-                NX_loc <- NX[which(abs(dx) <= thr), ]
-                eta0 <- cor2vec(stats::cor(NX_loc, method = "pearson"), scale)
-                npar <- length(eta0)
-                par0 <- c(eta0, rep(0, npar))
-
-                # Negative local log likelihood function
-                loglik <- function(par) {
-                    par <- as.numeric(par)
-
-                    # Epanechnikov kernel weights
-                    wgt <- 3/(4 * band) * pmax(1 - (dx / band)^2, 0)
-
-                    # Only compute densities when weight is nonzero
-                    pos_ix <- which(wgt > 0)
-                    P <- sapply(pos_ix, function(j) {
-                        # Reconstruct correlation matrix
-                        npar <- as.integer(length(par) / 2)
-                        eta0 <- par[1:npar]
-                        eta1 <- par[(npar + 1):(2 * npar)]
-                        R <- vec2cor(eta0 + eta1 * dx[j], scale = scale)
-
-                        if (min(eigen(R)$values) <= 0) {
-                            # Matrix is theoretically PD but may not be
-                            # numerically PD
-                            return(0)
-                        } else {
-                            # Numerical evaluation of Gaussian CDF
-                            return(tryCatch(
-                                TruncatedNormal::mvNcdf(
-                                    l = NXm[j, ],
-                                    u = NX[j, ],
-                                    Sig = R,
-                                    n = 1e3
-                                )$prob,
-                                error = function(e) {
-                                    # Error often thrown for poorly conditioned
-                                    # matrices, return probability of 0
-                                    0
-                                }
-                            ))
-                        }
-                    })
-                    if (any(P <= 0)) {
-                        # Probabilities are theoretically nonnegative but may
-                        # be numerically negative. Return large number instead
-                        # of infinity.
-                        return(1e20)
-                    } else {
-                        return(-sum(wgt[pos_ix] * log(P)))
-                    }
-                }
-
-                # Create inner cluster
-                cl <- parallel::makeCluster(cores2)
-                on.exit(parallel::stopCluster(cl))
-                parallel::clusterExport(
-                    cl = cl,
-                    varlist = c("vec2cor", "scale", "band", "NX", "NXm")
-                )
-
-                # Parallelized L-BFGS optimization
-                opt <- optimParallel::optimParallel(
-                    par = par0,
-                    fn = loglik,
-                    parallel = list(cl = cl),
-                    control = control
-                )
-                pbar()
-                return(opt$par[1:npar])
-            },
-            future.seed = TRUE,
-            future.packages = c("parallel", "optimParallel"))
-
-            return(list(eta_vals = eta_vals))
+            eta_vals <- future.apply::future_lapply(
+                X = x0,
+                FUN = lbfgs_optim,
+                future.seed = TRUE,
+                future.packages = c("parallel", "optimParallel")
+            )
+            info <- NULL
         } else if (optMethod == "torch") {
-            opt_res <- future.apply::future_lapply(X = x0, function(x0i) {
-                ## Initial conditions
-                dx <- x - x0i
-                # Use points nearby to estimate initial correlation matrix
-                max_thr <- sort(abs(dx))[min(length(dx), dim(NX)[2])]
-                thr <- max(stats::quantile(abs(dx), R0), max_thr)
-                NX_loc <- NX[which(abs(dx) <= thr), ]
-
-                eta0 <- cor2vec(stats::cor(NX_loc, method = "pearson"), scale)
-                npar <- length(eta0)
-                par0 <- c(eta0, rep(0, npar))
-
-                fit <- py_load()$fit_continuous
-                res <- fit(par0, dx, NX, NXm, scale, band, control)
-                pbar()
-
-                return(list(
-                    par = res$opt[1:npar],
-                    loss = res$hist,
-                    convergence = res$convergence
-                ))
-            }, future.seed = TRUE)
-
-            return(list(
-                eta_vals = lapply(opt_res, '[[', "par"),
-                loss = lapply(opt_res, '[[', "loss"),
-                convergence = sapply(opt_res, '[[', "convergence")
-            ))
+            opt_res <- future.apply::future_lapply(
+                X = x0,
+                FUN = sgd_optim,
+                future.seed = TRUE
+            )
+            info <- list(loss = lapply(opt_res, '[[', "loss"))
         }
+        return(c(list(eta_vals = lapply(opt_res, '[[', "par"),
+                      convergence = sapply(opt_res, '[[', "convergence")),
+                 info))
     })
 }
 
@@ -316,108 +322,175 @@ local_fit_continuous_gaussian <- function(FX,
     # Convert to standard normal margins
     NX <- stats::qnorm(FX)
 
+    lbfgs_optim <- function(x0i) {
+        # Use points nearby to estimate initial correlation matrix
+        dx <- x - x0i
+        max_thr <- sort(abs(dx))[min(length(dx), dim(NX)[2])]
+        thr <- max(stats::quantile(abs(dx), R0), max_thr)
+        NX_loc <- NX[which(abs(dx) <= thr), ]
+
+        eta0 <- cor2vec(stats::cor(NX_loc, method = "pearson"), scale)
+        par0 <- c(eta0, rep(0, length(eta0)))
+
+        # Negative local log likelihood function
+        loglik <- function(par) {
+            par <- as.numeric(par)
+
+            # Epanechnikov kernel weights
+            wgt <- 3/(4 * band) * pmax(1 - (dx / band)^2, 0)
+
+            # Only compute densities when weight is nonzero
+            pos_ix <- which(wgt > 0)
+            P <- sapply(pos_ix, function(j) {
+                # Reconstruct correlation matrix
+                npar <- as.integer(length(par) / 2)
+                eta0 <- par[1:npar]
+                eta1 <- par[(npar + 1):(2 * npar)]
+                R <- vec2cor(eta0 + eta1 * dx[j], scale = scale)
+
+                if (min(eigen(R)$values) <= 0) {
+                    # Matrix is theoretically PD but may not be
+                    # numerically PD
+                    return(0)
+                } else {
+                    return(mvtnorm::dmvnorm(x = NX[j, ], sigma = R))
+                }
+            })
+
+            if (any(P <= 0)) {
+                # Probabilities are theoretically nonnegative but may
+                # be numerically negative. Return large number instead
+                # of infinity.
+                return(1e20)
+            } else {
+                return(-sum(wgt[pos_ix] * log(P)))
+            }
+        }
+
+        # Create inner cluster
+        cl <- parallel::makeCluster(cores2)
+        on.exit(parallel::stopCluster(cl))
+        parallel::clusterExport(
+            cl = cl,
+            varlist = c("vec2cor", "scale", "band", "NX")
+        )
+
+        # Parallelized L-BFGS optimization
+        opt <- optimParallel::optimParallel(
+            par = par0,
+            fn = loglik,
+            parallel = list(cl = cl),
+            control = control
+        )
+        pbar()
+        return(list(par = opt$par[1:length(eta0)],
+                    convergence = opt$convergence))
+    }
+
+    sgd_optim <- function(x0i) {
+        # Use points nearby to estimate initial correlation matrix
+        dx <- x - x0i
+        max_thr <- sort(abs(dx))[min(length(dx), dim(NX)[2])]
+        thr <- max(stats::quantile(abs(dx), R0), max_thr)
+        NX_loc <- NX[which(abs(dx) <= thr), ]
+
+        eta0 <- cor2vec(stats::cor(NX_loc, method = "pearson"), scale)
+        par0 <- c(eta0, rep(0, length(eta0)))
+
+        fit_continuous <- py_load()$fit_continuous
+        res <- fit_continuous(par0, dx, NX, scale, band, control)
+        pbar()
+
+        return(list(par = res$opt[1:length(eta0)],
+                    loss = res$hist,
+                    convergence = res$convergence))
+    }
+
     progressr::with_progress({
         pbar <- progressr::progressor(along = x0)
         if (optMethod == "LBFGS") {
-            res <- future.apply::future_lapply(X = x0, function(x0i) {
-                ## Initial conditions
-                dx <- x - x0i
-                # Use points nearby to estimate initial correlation matrix
-                max_thr <- sort(abs(dx))[min(length(dx), dim(NX)[2])]
-                thr <- max(stats::quantile(abs(dx), R0), max_thr)
-                NX_loc <- NX[which(abs(dx) <= thr), ]
-                eta0 <- cor2vec(stats::cor(NX_loc, method = "pearson"), scale)
-                par0 <- c(eta0, rep(0, length(eta0)))
-
-                # Negative local log likelihood function
-                loglik <- function(par) {
-                    par <- as.numeric(par)
-
-                    # Epanechnikov kernel weights
-                    wgt <- 3/(4 * band) * pmax(1 - (dx / band)^2, 0)
-
-                    # Only compute densities when weight is nonzero
-                    pos_ix <- which(wgt > 0)
-                    P <- sapply(pos_ix, function(j) {
-                        # Reconstruct correlation matrix
-                        npar <- as.integer(length(par) / 2)
-                        eta0 <- par[1:npar]
-                        eta1 <- par[(npar + 1):(2 * npar)]
-                        R <- vec2cor(eta0 + eta1 * dx[j], scale = scale)
-
-                        if (min(eigen(R)$values) <= 0) {
-                            # Matrix is theoretically PD but may not be
-                            # numerically PD
-                            return(0)
-                        } else {
-                            return(mvtnorm::dmvnorm(x = NX[j, ], sigma = R))
-                        }
-                    })
-
-                    if (any(P <= 0)) {
-                        # Probabilities are theoretically nonnegative but may
-                        # be numerically negative. Return large number instead
-                        # of infinity.
-                        return(1e20)
-                    } else {
-                        return(-sum(wgt[pos_ix] * log(P)))
-                    }
-                }
-
-                # Create inner cluster
-                cl <- parallel::makeCluster(cores2)
-                on.exit(parallel::stopCluster(cl))
-                parallel::clusterExport(
-                    cl = cl,
-                    varlist = c("vec2cor", "scale", "band", "NX")
-                )
-
-                # Parallelized L-BFGS optimization
-                opt <- optimParallel::optimParallel(
-                    par = par0,
-                    fn = loglik,
-                    parallel = list(cl = cl),
-                    control = control
-                )
-                pbar()
-                return(list(par = opt$par[1:length(eta0)],
-                            convergence = opt$convergence))
-            },
-            future.seed = TRUE,
-            future.packages = c("parallel", "optimParallel"))
-
-            return(list(
-                eta_vals = lapply(res, '[[', "par"),
-                convergence = sapply(res, '[[', "convergence")
-            ))
+            res <- future.apply::future_lapply(
+                X = x0,
+                FUN = lbfgs_optim,
+                future.seed = TRUE,
+                future.packages = c("parallel", "optimParallel")
+            )
+            info <- NULL
         } else if (optMethod == "torch") {
-            res <- future.apply::future_lapply(X = x0, function(x0i) {
-                ## Initial conditions
-                dx <- x - x0i
-                # Use points nearby to estimate initial correlation matrix
-                max_thr <- sort(abs(dx))[min(length(dx), dim(NX)[2])]
-                thr <- max(stats::quantile(abs(dx), R0), max_thr)
-                NX_loc <- NX[which(abs(dx) <= thr), ]
-                eta0 <- cor2vec(stats::cor(NX_loc, method = "pearson"), scale)
-                npar <- length(eta0)
-                par0 <- c(eta0, rep(0, npar))
-
-                fit <- py_load()$fit_continuous
-                res <- fit(par0, dx, NX, scale, band, control)
-                pbar()
-
-                return(list(par = res$opt[1:npar],
-                            loss = res$hist,
-                            convergence = res$convergence))
-            }, future.seed = TRUE)
-
-            return(list(
-                eta_vals = lapply(res, '[[', "par"),
-                loss = lapply(res, '[[', "loss"),
-                convergence = sapply(res, '[[', "convergence")
-            ))
+            res <- future.apply::future_lapply(
+                X = x0,
+                FUN = sgd_optim,
+                future.seed = TRUE
+            )
+            info <- list(loss = lapply(res, '[[', "loss"))
         }
+        return(c(list(eta_vals = lapply(res, '[[', "par"),
+                      convergence = sapply(res, '[[', "convergence")),
+                 info))
     })
+}
+
+###############################################################################
+
+#' Likelihood
+#'
+#' Compute likelihood
+#'
+#' @param FX FX
+#' @param FXm FXm
+#' @param R R
+#'
+#' @return Value
+#'
+#' @export
+loglik <- function(FX, FXm = NULL, R)  {
+    NX <- stats::qnorm(FX)
+    if (is.null(FXm)) {
+        ll <- apply(NX, 1, function(x) { mvtnorm::dmvnorm(x = x, sigma = R) })
+    } else {
+        NXm <- stats::qnorm(FXm)
+        ll <- sapply(seq(dim(FX)[1]), function(i) {
+            TruncatedNormal::mvNcdf(l = NXm[i, ], u = NX[i, ], Sig = R,
+                                    n = 1e3)$prob
+        })
+    }
+    return(sum(ll))
+}
+
+###############################################################################
+
+#' Estimate correlation coefficients
+#'
+#' Estimate correlation coefficients
+#'
+#' @param res Output of \code{local_fit_gaussian}.
+#' @param df Number of degrees of freedom for spline fitting. If \code{NULL},
+#' leave-one-out cross validation is used instead.
+#'
+#' @return Predicted rho values.
+#'
+#' @export
+predict_rho <- function(res, df = length(res$x0)) {
+    # Predict eta values using smooth splines
+    eta_pred <- apply(res$eta, 2, function(y) {
+        if (is.null(df)) {
+            fit <- stats::smooth.spline(res$x0, y, cv = TRUE)
+        } else {
+            fit <- stats::smooth.spline(res$x0, y, df = df)
+        }
+        stats::predict(fit, res$x)$y
+    })
+
+    # Convert to correlation matrices
+    v2c <- function(eta) { vec2cor(eta, scale = res$scale) }
+    R_pred <- apply(eta_pred, 1, v2c, simplify = FALSE)
+
+    # Extract time series for each coefficient
+    ix <- which(lower.tri(R_pred[[1]]), arr.ind = TRUE)
+    rho <- apply(ix, 1, function(v) {
+        sapply(R_pred, function(R) { R[v[1], v[2]] })
+    })
+    return(rho)
 }
 
 ###############################################################################

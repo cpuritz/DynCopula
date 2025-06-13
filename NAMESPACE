@@ -2,5 +2,7 @@
 
 export(cor2vec)
 export(local_fit_gaussian)
+export(loglik)
+export(predict_rho)
 export(setup)
 export(vec2cor)
