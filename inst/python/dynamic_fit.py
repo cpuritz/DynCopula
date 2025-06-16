@@ -60,7 +60,7 @@ def fit_continuous(par0, dx, NX, scale, band, control):
 		eta_good = eta.detach().clone()
 
 	opt = eta_good.detach().numpy()
-	return {"opt": opt, "hist": hist, "convergence": int(exit_code)}
+	return {"par": opt, "hist": hist, "convergence": int(exit_code)}
 	
 ######################################################################
 	
@@ -162,7 +162,7 @@ def fit_discrete(par0, dx, NX, NXm, scale, band, control):
 		eta_good = eta.detach().clone()
 
 	opt = eta_good.detach().numpy()
-	return {"opt": opt, "hist": hist, "convergence": int(exit_code)}
+	return {"par": opt, "hist": hist, "convergence": int(exit_code)}
 	
 ######################################################################
 

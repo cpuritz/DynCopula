@@ -12,23 +12,23 @@ local_fit_gaussian(
   band,
   scale,
   R0 = 0.05,
-  optMethod = c("LBFGS", "torch"),
+  optMethod = c("L-BFGS", "SGD"),
   control = list(),
   cores = 1L,
-  cores2 = NULL
+  cores2 = 1L
 )
 }
 \arguments{
-\item{FX}{Matrix of pseudo-observations F_i(X_i).}
+\item{FX}{Matrix of pseudo-observations F_i(X_i) at time points.}
 
-\item{FXm}{Matrix of left limits of distribution functions F_i(X_i - 1).
-If \code{NULL}, it is assumed that all margins are continuous.}
+\item{FXm}{Matrix of left limits of distribution functions F_i(X_i - 1) at
+time points. If \code{NULL}, it is assumed that all margins are continuous.}
 
-\item{x}{x}
+\item{x}{Vector of time points corresponding to \code{FX} and \code{FXm}.}
 
-\item{x0}{x0}
+\item{x0}{Time points to estimate copula parameters at.}
 
-\item{band}{Kernel bandwidth}
+\item{band}{Kernel bandwidth.}
 
 \item{scale}{Scale factor used for unconstrained parametrization of
 correlation matrices.}
@@ -37,23 +37,52 @@ correlation matrices.}
 matrix. Default is \code{0.05}. Must be between \code{0} (exclusive) and
 \code{1} (inclusive).}
 
-\item{optMethod}{Optimization method. Either \code{"SGD"} or \code{"LBFGS"}.
+\item{optMethod}{Optimization method. Either \code{"SGD"} or \code{"L-BFGS"}.
 \code{"SGD"} implements stochastic gradient descent with gradients computed
-using automatic differentiation. \code{"LBFGS"} implements the quasi-Newton
+using automatic differentiation. \code{"L-BFGS"} implements the quasi-Newton
 limited memory BFGS with gradients estimated numerically.}
 
-\item{control}{Control parameters for optimization.}
+\item{control}{A \code{list} of control parameters for optimization.}
 
 \item{cores}{Number of cores to use for parallel optimization. Parallelized
-over \code{x0}.}
+over \code{x0}. Default is \code{1}.}
 
-\item{cores2}{If using \code{"LBFGS"}, each optimization step can be
-parallelized, in addition to parallelization over \code{x0}. The total number
-of cores used is \code{cores * cores2}.}
+\item{cores2}{If using \code{"L-BFGS"}, each optimization step can be
+parallelized, in addition to parallelization over \code{x0}. The total
+number of cores used is \code{cores * cores2}. Default is \code{1}.}
 }
 \value{
-Value
+\itemize{
+  \item \code{x}: The input argument \code{x}.
+  \item \code{x0}: The input argument \code{x0}.
+  \item \code{eta}: Matrix of estimated coefficients in the unconstrained
+  space.
+  \item \code{rho}: Matrix of estimated pairwise correlation coefficients.
+  \item \code{scale}: The input argument \code{scale}.
+  \item \code{convergence}: Convergence codes for each coefficient.
+  \code{0} indicates successful completion. \code{1} indicates that iteration
+  limit had been reached.
+  \item \code{loss}: Loss history for each coefficient. Only available if
+  \code{optMethod} is \code{"SGD"}.
+}
 }
 \description{
-Performs Local Fit Gaussian
+Fit a dynamic Gaussian copula to time series data.
+}
+\details{
+The \code{control} argument is a list that supplies control
+parameters for optimization. For SGD, the following parameters can be
+supplied:
+\itemize{
+  \item \code{maxit} Maximum number of iterations. Default is \code{100}.
+  \item \code{lr} Learning rate for RMSProp. Default is \code{1e-2}.
+  \item \code{reltol} Relative convergence tolerance.
+  \item \code{patience} Optimization stops if the relative log-likelihood
+  has not decreased by a factor of \code{reltol} within the last
+  \code{patience} iterations. Default is \code{5}.
+  \item \code{weight_decay} Weight decay for RMSProp. Default is \code{0}.
+}
+For L-BFGS, the available control parameters and default values are the same
+as those of the \code{\link[stats]{optim}} function from the \strong{stats}
+package.
 }

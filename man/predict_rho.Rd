@@ -4,17 +4,20 @@
 \alias{predict_rho}
 \title{Estimate correlation coefficients}
 \usage{
-predict_rho(res, df = length(res$x0))
+predict_rho(res, x = res$x, df = NULL)
 }
 \arguments{
 \item{res}{Output of \code{local_fit_gaussian}.}
 
-\item{df}{Number of degrees of freedom for spline fitting. If \code{NULL},
-leave-one-out cross validation is used instead.}
+\item{x}{Times at which to estimate coefficients.}
+
+\item{df}{Number of degrees of freedom for spline fitting. If \code{NULL}
+(the default), leave-one-out cross validation is used instead.}
 }
 \value{
-Predicted rho values.
+Predicted correlation coefficients.
 }
 \description{
-Estimate correlation coefficients
+Estimate correlation coefficients using smoothing splines fit in the
+unconstrained space.
 }
