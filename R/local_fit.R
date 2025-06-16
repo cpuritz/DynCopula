@@ -1,6 +1,6 @@
 ###############################################################################
 
-#' Local Fit Gaussian
+#' Fitting dynamic Gaussian copula model
 #'
 #' @description Fit a dynamic Gaussian copula to time series data.
 #'
@@ -50,24 +50,24 @@
 #'   \item \code{rho}: Matrix of estimated pairwise correlation coefficients.
 #'   \item \code{scale}: The input argument \code{scale}.
 #'   \item \code{convergence}: Convergence codes for each coefficient.
-#'   \code{0} indicates successful completion. \code{1} indicates that iteration
-#'   limit had been reached.
+#'   \code{0} indicates successful completion. \code{1} indicates that
+#'   iteration limit had been reached.
 #'   \item \code{loss}: Loss history for each coefficient. Only available if
 #'   \code{optMethod} is \code{"SGD"}.
 #' }
 #'
 #' @export
-local_fit_gaussian <- function(FX,
-                               FXm = NULL,
-                               x,
-                               x0,
-                               band,
-                               scale,
-                               R0 = 0.05,
-                               optMethod = c("L-BFGS", "SGD"),
-                               control = list(),
-                               cores = 1L,
-                               cores2 = 1L) {
+fit_dynamic_gaussian <- function(FX,
+                                 FXm = NULL,
+                                 x,
+                                 x0,
+                                 band,
+                                 scale,
+                                 R0 = 0.05,
+                                 optMethod = c("L-BFGS", "SGD"),
+                                 control = list(),
+                                 cores = 1L,
+                                 cores2 = 1L) {
     optMethod <- match.arg(optMethod)
 
     # Basic checks
@@ -135,9 +135,9 @@ local_fit_gaussian <- function(FX,
 
     args <- as.list(environment())
     if (is.null(FXm)) {
-        fun <- .local_fit_cts_gaussian
+        fun <- .fit_dynamic_gaussian_cts
     } else {
-        fun <- .local_fit_discrete_gaussian
+        fun <- .fit_dynamic_gaussian_discrete
     }
     res <- do.call(fun, args[names(formals(fun))])
     eta_vals <- res[["eta_vals"]]
@@ -166,22 +166,22 @@ local_fit_gaussian <- function(FX,
 
 ###############################################################################
 
-#' Discrete Local Fit Gaussian
+#' Fitting dynamic Gaussian copula model for discrete data
 #'
-#' @inheritParams local_fit_gaussian
+#' @inheritParams fit_dynamic_gaussian
 #'
 #' @return Estimated coefficients and information about optimization
-.local_fit_discrete_gaussian <- function(FX,
-                                         FXm,
-                                         x,
-                                         x0,
-                                         band,
-                                         scale,
-                                         R0,
-                                         optMethod,
-                                         control,
-                                         cores,
-                                         cores2) {
+.fit_dynamic_gaussian_discrete <- function(FX,
+                                           FXm,
+                                           x,
+                                           x0,
+                                           band,
+                                           scale,
+                                           R0,
+                                           optMethod,
+                                           control,
+                                           cores,
+                                           cores2) {
     # Set up futures plan
     future::plan("multisession", workers = cores)
 
@@ -375,21 +375,21 @@ local_fit_gaussian <- function(FX,
 
 ###############################################################################
 
-#' Continuous Local Fit Gaussian
+#' Fitting dynamic Gaussian copula model for continuous data
 #'
-#' @inheritParams local_fit_gaussian
+#' @inheritParams fit_dynamic_gaussian
 #'
 #' @return Estimated coefficients and information about optimization
-.local_fit_cts_gaussian <- function(FX,
-                                    x,
-                                    x0,
-                                    band,
-                                    scale,
-                                    R0,
-                                    optMethod,
-                                    control,
-                                    cores,
-                                    cores2)  {
+.fit_dynamic_gaussian_cts <- function(FX,
+                                      x,
+                                      x0,
+                                      band,
+                                      scale,
+                                      R0,
+                                      optMethod,
+                                      control,
+                                      cores,
+                                      cores2)  {
     # Set up futures plan
     future::plan("multisession", workers = cores)
 
@@ -543,7 +543,7 @@ loglik <- function(FX, FXm = NULL, R)  {
 #' Estimate correlation coefficients using smoothing splines fit in the
 #' unconstrained space.
 #'
-#' @param res Output of \code{local_fit_gaussian}.
+#' @param res Output of \code{fit_dynamic_gaussian}.
 #' @param x Times at which to estimate coefficients.
 #' @param df Number of degrees of freedom for spline fitting. If \code{NULL}
 #' (the default), leave-one-out cross validation is used instead.
