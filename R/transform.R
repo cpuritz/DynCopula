@@ -2,15 +2,14 @@
 
 #' cor2vec
 #'
-#' cor2vec
+#' Convert correlation matrix to vector.
 #'
-#' @param R R
-#' @param scale scale
+#' @param R A correlation matrix.
 #'
-#' @returns value
+#' @returns A vector.
 #'
 #' @export
-cor2vec <- function(R, scale) {
+cor2vec <- function(R) {
     d <- dim(R)[1]
 
     # Compute Cholesky factor
@@ -26,7 +25,7 @@ cor2vec <- function(R, scale) {
 
     # Map to an unconstrained vector in R^(d choose 2)
     vH <- H[lower.tri(H)]
-    vH <- scale * atanh(vH)
+    vH <- atanh(vH)
     return(vH)
 }
 
@@ -34,21 +33,20 @@ cor2vec <- function(R, scale) {
 
 #' vec2cor
 #'
-#' vec2cor
+#' Convert a vector to a correlation matrix.
 #'
-#' @param v v
-#' @param scale scale
+#' @param v A vector.
 #'
-#' @returns value
+#' @returns A correlation matrix.
 #'
 #' @export
-vec2cor <- function(v, scale) {
+vec2cor <- function(v) {
     d <- as.integer(round((1 + sqrt(1 + 8 * length(v))) / 2))
 
     # Map unconstrained vector to d x d matrix with entries in (-1, 1)
     H <- matrix(0, nrow = d, ncol = d)
     diag(H) <- 1
-    H[lower.tri(H)] <- tanh(v / scale)
+    H[lower.tri(H)] <- tanh(v)
 
     # Map back to Cholesky factor space
     for (i in 2:d) {

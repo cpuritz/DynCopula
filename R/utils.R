@@ -1,17 +1,21 @@
-#' Load python functions
+#' Load Python module
 #'
-#' Utility function to lazily load necessary python functions.
-py_load <- function() {
+#' @description Utility function to lazily load a Python module.
+#'
+#' @param module Name of module to load.
+py_load <- function(module = c("dynamic_gaussian", "dynamic_t")) {
+    module <- match.arg(module)
     reticulate::import_from_path(
-        "dynamic_fit",
+        module = module,
         path = system.file("python", package = "DynCopula"),
         delay_load = TRUE
     )
+
 }
 
-#' Builds Python virtual environment
+#' Build Python virtual environment
 #'
-#' Builds Python virtual environment
+#' @description Utility function to build a Python virtual environment.
 #'
 #' @export
 setup <- function() {

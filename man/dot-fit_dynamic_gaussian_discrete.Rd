@@ -10,8 +10,6 @@
   x,
   x0,
   band,
-  scale,
-  R0,
   optMethod,
   control,
   cores,
@@ -28,19 +26,14 @@ time points. If \code{NULL}, it is assumed that all margins are continuous.}
 
 \item{x0}{Time points to estimate copula parameters at.}
 
-\item{band}{Kernel bandwidth.}
-
-\item{scale}{Scale factor used for unconstrained parametrization of
-correlation matrices.}
-
-\item{R0}{Fraction of neighbors to use to estimate the initial correlation
-matrix. Default is \code{0.05}. Must be between \code{0} (exclusive) and
-\code{1} (inclusive).}
+\item{band}{Kernel bandwidth. Default is \code{0.10}. Must satisfy
+\code{0 < band < 1}.}
 
 \item{optMethod}{Optimization method. Either \code{"SGD"} or \code{"L-BFGS"}.
 \code{"SGD"} implements stochastic gradient descent with gradients computed
 using automatic differentiation. \code{"L-BFGS"} implements the quasi-Newton
-limited memory BFGS with gradients estimated numerically.}
+limited memory BFGS with gradients estimated numerically. Default is
+\code{"SGD"}.}
 
 \item{control}{A \code{list} of control parameters for optimization.}
 

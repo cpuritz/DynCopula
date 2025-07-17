@@ -4,16 +4,14 @@
 \alias{vec2cor}
 \title{vec2cor}
 \usage{
-vec2cor(v, scale)
+vec2cor(v)
 }
 \arguments{
-\item{v}{v}
-
-\item{scale}{scale}
+\item{v}{A vector.}
 }
 \value{
-value
+A correlation matrix.
 }
 \description{
-vec2cor
+Convert a vector to a correlation matrix.
 }

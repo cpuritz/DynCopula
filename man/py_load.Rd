@@ -2,10 +2,13 @@
 % Please edit documentation in R/utils.R
 \name{py_load}
 \alias{py_load}
-\title{Load python functions}
+\title{Load Python module}
 \usage{
-py_load()
+py_load(module = c("dynamic_gaussian", "dynamic_t"))
+}
+\arguments{
+\item{module}{Name of module to load.}
 }
 \description{
-Utility function to lazily load necessary python functions.
+Utility function to lazily load a Python module.
 }

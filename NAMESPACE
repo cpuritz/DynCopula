@@ -2,6 +2,7 @@
 
 export(cor2vec)
 export(fit_dynamic_gaussian)
+export(fit_dynamic_t)
 export(loglik)
 export(predict_rho)
 export(setup)

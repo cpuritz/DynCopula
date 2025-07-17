@@ -1,10 +1,11 @@
 import torch
 import botorch
 import numpy as np
+from distributions import _vec2chol, _log_mvn_density
 
 ######################################################################
 
-def fit_continuous(par0, dx, NX, scale, band, control):
+def fit_continuous_gaussian(par0, dx, NX, band, control):
 	max_it = int(control["max_it"])
 	reltol = control["reltol"]
 	patience = int(control["patience"])
@@ -23,12 +24,6 @@ def fit_continuous(par0, dx, NX, scale, band, control):
 		weight_decay = control["weight_decay"]
 	)
 	
-	d = int(1 + np.sqrt(1 + 4 * eta.numel()) / 2)
-	indices = np.stack(np.tril_indices(d, k = -1), axis = 1)
-	sorted_indices = indices[np.lexsort((indices[:, 0], indices[:, 1]))]
-	l_tri = (torch.tensor(sorted_indices[:, 0], dtype = torch.int32),
-		   torch.tensor(sorted_indices[:, 1], dtype = torch.int32))
-
 	# Record loss history
 	hist = []
 	# Track last good value in case of error
@@ -42,14 +37,14 @@ def fit_continuous(par0, dx, NX, scale, band, control):
 	
 	for i in range(max_it):
 		optimizer.zero_grad()
-		loss = _loglik_cts(eta, dx, NX, scale, band, l_tri)
+		loss = _loglik_cts_gaussian(eta, dx, NX, band)
 		hist.append(loss.item())
 
 		# Check for convergence
 		if i >= patience:
 			hp = hist[i - patience]
 			lhist = hist[(i - patience + 1):(i + 1)]
-			if all(abs(h - hp) / hp < reltol for h in lhist):
+			if all((hp - h) / abs(hp) < reltol for h in lhist):
 				exit_code = 0
 				break
 		loss.backward()
@@ -64,48 +59,38 @@ def fit_continuous(par0, dx, NX, scale, band, control):
 	
 ######################################################################
 	
-def _loglik_cts(eta, dx, NX, scale, band, l_tri):
+def _loglik_cts_gaussian(eta, dx, NX, band):
 	d = int(1 + np.sqrt(1 + 4 * eta.numel()) / 2)	
-
+	
+	# Kernel weights
 	wgt = 3 / (4 * band) * np.maximum(1 - (dx / band) ** 2, 0)
 	pos_ix  = np.where(wgt > 0)[0]
+	wgt = torch.tensor(wgt[pos_ix], dtype = eta.dtype)
+	
 	P = torch.zeros(len(pos_ix), dtype = eta.dtype)
 	npar = int(eta.numel() / 2)
+	loc = torch.zeros(d, dtype = eta.dtype)
 
 	for i in range(len(pos_ix)):
 		v = eta[0:npar] + eta[npar:(2 * npar)] * dx[pos_ix[i]]
-
-		# Transform back to constrained space
-		H = torch.eye(d, dtype = eta.dtype)
-		H = H.index_put(l_tri, torch.tanh(v / scale))
 		
-		# Reconstruct Cholesky factor
-		L = torch.zeros(d, d, dtype = eta.dtype)
-		L[0, :] = H[0, :]
-		L[:, 0] = H[:, 0]
-		for j in range(1, d):
-			cprod = torch.cumprod(1 - H[j, 0:j]**2, dim = 0)
-			L[j, 1:(j + 1)] = H[j, 1:(j + 1)] * torch.sqrt(cprod)
+		# Reconstruct Cholesky factor of correlation matrix
+		L = _vec2chol(v)
 		
-		# Reconstruct correlation matrix
-		R = L.matmul(L.t())
-
-		# Compute log probability
-		mvn = torch.distributions.multivariate_normal.MultivariateNormal(
-		    loc = torch.zeros(d, dtype = eta.dtype),
-		    covariance_matrix = R,
-		    validate_args = False
-        )
-		P[i] = mvn.log_prob(NX[pos_ix[i], :])
+		# Log probability
+		# Note: this is not the Gaussian copula density, but rather the only
+		# part of it that depends on the correlation matrix. The additional
+		# term is -ndist.log_prob(u).sum().
+		ndist = torch.distributions.Normal(loc = 0, scale = 1)
+		u = NX[pos_ix[i], :]
+		P[i] = _log_mvn_density(u, L)
 
 	# Weighted negative log likelihood
-	wgt_tens = torch.tensor(wgt[pos_ix], dtype = eta.dtype)
-	nll = -torch.sum(wgt_tens * P)
-	return nll
-	
+	return -torch.sum(wgt * P)
+
 ######################################################################
 
-def fit_discrete(par0, dx, NX, NXm, scale, band, control):
+def fit_discrete_gaussian(par0, dx, NX, NXm, band, control):
 	max_it = int(control["max_it"])
 	reltol = control["reltol"]
 	patience = int(control["patience"])
@@ -124,27 +109,23 @@ def fit_discrete(par0, dx, NX, NXm, scale, band, control):
 		lr = control["lr"],
 		weight_decay = control["weight_decay"]
 	)
-	
-	d = int(1 + np.sqrt(1 + 4 * eta.numel()) / 2)
-	indices = np.stack(np.tril_indices(d, k = -1), axis = 1)
-	sorted_indices = indices[np.lexsort((indices[:, 0], indices[:, 1]))]
-	l_tri = (torch.tensor(sorted_indices[:, 0], dtype = torch.int32),
-		   torch.tensor(sorted_indices[:, 1], dtype = torch.int32))
 
 	# Record loss history
 	hist = []
 	# Track last good value in case of error
 	eta_good = eta.detach().clone()
 	
-	# Exit codes
-	#  0  = converged
-	#  1 = reached max iterations
-	#  2 = error occurred
+	'''
+	Exit codes:
+	  0  = converged
+	  1 = reached max iterations
+	  2 = error occurred
+	'''
 	exit_code = 1
 	
 	for i in range(max_it):
 		optimizer.zero_grad()
-		loss = _loglik_discrete(eta, dx, NXm, NX, scale, band, l_tri)
+		loss = _loglik_discrete_gaussian(eta, dx, NXm, NX, band)
 		hist.append(loss.item())
 
 		# Check for convergence
@@ -166,7 +147,7 @@ def fit_discrete(par0, dx, NX, NXm, scale, band, control):
 	
 ######################################################################
 
-def _loglik_discrete(eta, dx, NXm, NX, scale, band, l_tri):
+def _loglik_discrete_gaussian(eta, dx, NXm, NX, band):
 	d = int(1 + np.sqrt(1 + 4 * eta.numel()) / 2)
 	
 	wgt = 3 / (4 * band) * np.maximum(1 - (dx / band) ** 2, 0)
@@ -177,19 +158,8 @@ def _loglik_discrete(eta, dx, NXm, NX, scale, band, l_tri):
 	
 	for i in range(len(pos_ix)):
 		v = eta[0:npar] + eta[npar:(2 * npar)] * dx[pos_ix[i]]
-
-		# Transform back to constrained space
-		H = torch.eye(d, dtype = eta.dtype)
-		H = H.index_put(l_tri, torch.tanh(v / scale))
-
 		# Reconstruct Cholesky factor
-		L = torch.zeros(d, d, dtype = eta.dtype)
-		L[0, :] = H[0, :]
-		L[:, 0] = H[:, 0]
-		for j in range(1, d):
-			cprod = torch.cumprod(1 - H[j, 0:j]**2, dim = 0)
-			L[j, 1:(j + 1)] = H[j, 1:(j + 1)] * torch.sqrt(cprod)
-
+		L = _vec2chol(v)
 		# Reconstruct correlation matrix
 		R = L.matmul(L.t())
 

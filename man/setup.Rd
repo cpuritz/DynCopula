@@ -2,10 +2,10 @@
 % Please edit documentation in R/utils.R
 \name{setup}
 \alias{setup}
-\title{Builds Python virtual environment}
+\title{Build Python virtual environment}
 \usage{
 setup()
 }
 \description{
-Builds Python virtual environment
+Utility function to build a Python virtual environment.
 }
