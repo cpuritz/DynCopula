@@ -20,7 +20,7 @@
 #' @param cores Number of cores to use for parallel optimization. Parallelized
 #' over \code{x0}. Default is \code{1}.
 #' @param cores2 If using \code{"L-BFGS"}, each optimization step can be
-#' parallelized, in addition to parallelization over \code{x0}. The total
+#' parallelized in addition to parallelization over \code{x0}. The total
 #' number of cores used is \code{cores * cores2}. Default is \code{1}.
 #'
 #' @details The \code{control} argument is a list that supplies control
@@ -28,14 +28,15 @@
 #' supplied:
 #' \itemize{
 #'   \item \code{maxit} Maximum number of iterations. Default is \code{100}.
-#'   \item \code{lr} Learning rate for RMSProp. Default is \code{1e-2}.
+#'   \item \code{lr} Learning rate for SGD. Default is \code{1e-2}.
 #'   \item \code{reltol} Relative convergence tolerance.
 #'   \item \code{patience} Optimization stops if the relative log-likelihood
 #'   has not decreased by a factor of \code{reltol} within the last
 #'   \code{patience} iterations. Default is \code{5}.
-#'   \item \code{weight_decay} Weight decay for RMSProp. Default is \code{0}.
+#'   \item \code{momentum} Momentum for SGD. Default is \code{0.9}.
+#'   \item \code{weight_decay} Weight decay for SGD. Default is \code{0}.
 #'   \item \code{R0} Fraction of neighbors to use to estimate the initial
-#'   correlation matrix. Default is \code{0.10}. Must satisfy \code{0 < R0 <= 1}.
+#'   correlation matrix. Default is \code{0.10}.
 #' }
 #' For L-BFGS, the available control parameters and default values are the same
 #' as those of the \code{\link[stats]{optim}} function from the \strong{stats}
@@ -89,40 +90,34 @@ fit_dynamic_gaussian <- function(FX,
 
     ## Control parameters
     # Control parameters common to both optimization methods
-    assertthat::assert_that(all(sapply(control, is.numeric)))
-    if ("maxit" %in% names(control)) {
-        control$maxit <- as.integer(control$maxit)
-    } else {
-        control <- c(list(maxit = 100L), control)
-    }
-    if (!"R0" %in% names(control)) {
-        control$R0 <- 0.10
-    }
+    defaults <- list(
+        maxit = 100L,
+        R0 = 0.10
+    )
+    control <- utils::modifyList(defaults, control)
+    control$maxit <- as.integer(control$maxit)
     assertthat::assert_that(
+        all(sapply(control, is.numeric)),
         control$maxit >= 1L,
         control$R0 > 0 && control$R0 <= 1
     )
 
     # SGD specific control parameters
     if (optMethod == "SGD") {
-        if (!"lr" %in% names(control)) {
-            control$lr <- 1e-2
-        }
-        if (!"reltol" %in% names(control)) {
-            control$reltol <- 1e-5
-        }
-        if (!"patience" %in% names(control)) {
-            control$patience <- 5L
-        } else {
-            control$patience <- as.integer(control$patience)
-        }
-        if (!"weight_decay" %in% names(control)) {
-            control$weight_decay <- 0
-        }
+        sgd_defaults <- list(
+            lr = 1e-2,
+            reltol = 1e-5,
+            patience = 5L,
+            momentum = 0.9,
+            weight_decay = 0
+        )
+        control <- utils::modifyList(sgd_defaults, control)
+        control$patience <- as.integer(control$patience)
         assertthat::assert_that(
             control$lr > 0,
             control$reltol > 0,
             control$patience >= 1L,
+            control$momentum >= 0 && control$momentum < 1,
             control$weight_decay >= 0
         )
     }
@@ -161,6 +156,15 @@ fit_dynamic_gaussian <- function(FX,
     colnames(Hhat) <- paste0("eta", ix_lab)
     colnames(Rhat) <- paste0("rho", ix_lab)
 
+    if ("hist" %in% names(res)) {
+        labs <- c(paste0("eta", ix_lab), paste0("d_eta", ix_lab))
+        res$hist <- t(lapply(res$hist, function(x) {
+            rownames(x) <- labs
+            colnames(x) <- seq(dim(x)[2])
+            return(x)
+        }))
+    }
+
     res <- c(res[setdiff(names(res), "eta_vals")],
              list(x = x * dx + min_x,
                   x0 = x0 * dx + min_x,
@@ -190,14 +194,15 @@ fit_dynamic_gaussian <- function(FX,
 #' supplied:
 #' \itemize{
 #'   \item \code{maxit} Maximum number of iterations. Default is \code{100}.
-#'   \item \code{lr} Learning rate for RMSProp. Default is \code{1e-2}.
+#'   \item \code{lr} Learning rate for SGD. Default is \code{1e-2}.
 #'   \item \code{reltol} Relative convergence tolerance.
 #'   \item \code{patience} Optimization stops if the relative log-likelihood
 #'   has not decreased by a factor of \code{reltol} within the last
 #'   \code{patience} iterations. Default is \code{5}.
-#'   \item \code{weight_decay} Weight decay for RMSProp. Default is \code{0}.
+#'   \item \code{momentum} Momentum for SGD. Default is \code{0.9}.
+#'   \item \code{weight_decay} Weight decay for SGD. Default is \code{0}.
 #'   \item \code{R0} Fraction of neighbors to use to estimate the initial
-#'   correlation matrix. Default is \code{0.10}. Must satisfy \code{0 < R0 <= 1}.
+#'   correlation matrix. Default is \code{0.10}.
 #' }
 #'
 #' @return \itemize{
@@ -231,35 +236,28 @@ fit_dynamic_t <- function(FX,
     )
     cores <- as.integer(cores)
 
-    # Control parameters
+    # Set control parameters
+    defaults <- list(
+        maxit = 100L,
+        R0 = 0.10,
+        lr = 1e-2,
+        patience = 5L,
+        momentum = 0.9,
+        weight_decay = 0
+    )
+    control <- utils::modifyList(defaults, control)
+    control$maxit <- as.integer(control$maxit)
+    control$patience <- as.integer(control$patience)
+
+    # Check control parameters
     assertthat::assert_that(all(sapply(control, is.numeric)))
-    if ("maxit" %in% names(control)) {
-        control$maxit <- as.integer(control$maxit)
-    } else {
-        control <- c(list(maxit = 100L), control)
-    }
-    if (!"R0" %in% names(control)) {
-        control$R0 <- 0.10
-    }
-    if (!"lr" %in% names(control)) {
-        control <- c(list(lr = 1e-2), control)
-    }
-    if (!"reltol" %in% names(control)) {
-        control <- c(list(reltol = 1e-5), control)
-    }
-    if (!"patience" %in% names(control)) {
-        control <- c(list(patience = 5L), control)
-    } else {
-        control$patience <- as.integer(control$patience)
-    }
-    if (!"weight_decay" %in% names(control)) {
-        control <- c(list(weight_decay = 0), control)
-    }
+    assertthat::assert_that(all(names(control) %in% names(defaults)))
     assertthat::assert_that(
         control$maxit >= 1L,
         control$lr > 0,
         control$reltol > 0,
         control$patience >= 1L,
+        control$momentum >= 0 && control$momentum < 1,
         control$weight_decay >= 0,
         control$R0 > 0 && control$R0 <= 1
     )
@@ -509,7 +507,8 @@ fit_dynamic_t <- function(FX,
             return(list(
                 eta_vals = lapply(opt_res, '[[', "par"),
                 convergence = sapply(opt_res, '[[', "convergence"),
-                loss = lapply(opt_res, '[[', "loss")
+                loss = lapply(opt_res, '[[', "loss"),
+                hist = lapply(opt_res, '[[', "hist")
             ))
         }
     })
@@ -555,8 +554,9 @@ fit_dynamic_t <- function(FX,
 
             return(list(
                 par = res$par[1:length(eta0)],
-                loss = res$hist,
-                convergence = res$convergence
+                loss = res$loss_hist,
+                convergence = res$convergence,
+                hist = res$eta_hist
             ))
         }
 
@@ -570,7 +570,8 @@ fit_dynamic_t <- function(FX,
     return(list(
         eta_vals = lapply(res, '[[', "par"),
         convergence = sapply(res, '[[', "convergence"),
-        loss = lapply(res, '[[', "loss")
+        loss = lapply(res, '[[', "loss"),
+        hist = lapply(res, '[[', "hist")
     ))
 }
 

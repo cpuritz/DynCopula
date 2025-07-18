@@ -45,13 +45,14 @@ parameters for optimization. The following parameters can be
 supplied:
 \itemize{
   \item \code{maxit} Maximum number of iterations. Default is \code{100}.
-  \item \code{lr} Learning rate for RMSProp. Default is \code{1e-2}.
+  \item \code{lr} Learning rate for SGD. Default is \code{1e-2}.
   \item \code{reltol} Relative convergence tolerance.
   \item \code{patience} Optimization stops if the relative log-likelihood
   has not decreased by a factor of \code{reltol} within the last
   \code{patience} iterations. Default is \code{5}.
-  \item \code{weight_decay} Weight decay for RMSProp. Default is \code{0}.
+  \item \code{momentum} Momentum for SGD. Default is \code{0.9}.
+  \item \code{weight_decay} Weight decay for SGD. Default is \code{0}.
   \item \code{R0} Fraction of neighbors to use to estimate the initial
-  correlation matrix. Default is \code{0.10}. Must satisfy \code{0 < R0 <= 1}.
+  correlation matrix. Default is \code{0.10}.
 }
 }

@@ -18,19 +18,23 @@ def fit_continuous_gaussian(par0, dx, NX, band, control):
 	dx = np.array(dx)
 	NX = torch.tensor(NX, dtype = eta.dtype)
 
-	optimizer = torch.optim.RMSprop(
-		[eta],
-		lr = control["lr"],
-		weight_decay = control["weight_decay"]
+	optimizer = torch.optim.SGD(
+	    [eta],
+	    lr = control["lr"],
+	    momentum = control["momentum"],
+	    weight_decay = control["weight_decay"],
+	    nesterov = True
 	)
 	
 	# Record loss history
 	hist = []
 	# Track last good value in case of error
 	eta_good = eta.detach().clone()
+	# eta history
+	eta_hist = []
 	
 	# Exit codes
-	#  0  = converged
+	#  0 = converged
 	#  1 = reached max iterations
 	#  2 = error occurred
 	exit_code = 1
@@ -39,12 +43,13 @@ def fit_continuous_gaussian(par0, dx, NX, band, control):
 		optimizer.zero_grad()
 		loss = _loglik_cts_gaussian(eta, dx, NX, band)
 		hist.append(loss.item())
+		eta_hist.append(eta.detach().clone().unsqueeze(1))
 
 		# Check for convergence
 		if i >= patience:
 			hp = hist[i - patience]
 			lhist = hist[(i - patience + 1):(i + 1)]
-			if all((hp - h) / abs(hp) < reltol for h in lhist):
+			if all(abs(hp - h) <= reltol * abs(hp) for h in lhist):
 				exit_code = 0
 				break
 		loss.backward()
@@ -55,7 +60,13 @@ def fit_continuous_gaussian(par0, dx, NX, band, control):
 		eta_good = eta.detach().clone()
 
 	opt = eta_good.detach().numpy()
-	return {"par": opt, "hist": hist, "convergence": int(exit_code)}
+	eta_hist = torch.cat(eta_hist, dim = 1).numpy()
+	return {
+        "par": opt,
+        "loss_hist": hist,
+        "convergence": int(exit_code),
+        "eta_hist": eta_hist
+    }
 	
 ######################################################################
 	
@@ -143,7 +154,11 @@ def fit_discrete_gaussian(par0, dx, NX, NXm, band, control):
 		eta_good = eta.detach().clone()
 
 	opt = eta_good.detach().numpy()
-	return {"par": opt, "hist": hist, "convergence": int(exit_code)}
+	return {
+        "par": opt,
+        "hist": hist,
+        "convergence": int(exit_code)
+    }
 	
 ######################################################################
 

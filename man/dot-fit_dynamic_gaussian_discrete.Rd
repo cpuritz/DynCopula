@@ -41,7 +41,7 @@ limited memory BFGS with gradients estimated numerically. Default is
 over \code{x0}. Default is \code{1}.}
 
 \item{cores2}{If using \code{"L-BFGS"}, each optimization step can be
-parallelized, in addition to parallelization over \code{x0}. The total
+parallelized in addition to parallelization over \code{x0}. The total
 number of cores used is \code{cores * cores2}. Default is \code{1}.}
 }
 \value{

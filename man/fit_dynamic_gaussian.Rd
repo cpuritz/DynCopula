@@ -41,7 +41,7 @@ limited memory BFGS with gradients estimated numerically. Default is
 over \code{x0}. Default is \code{1}.}
 
 \item{cores2}{If using \code{"L-BFGS"}, each optimization step can be
-parallelized, in addition to parallelization over \code{x0}. The total
+parallelized in addition to parallelization over \code{x0}. The total
 number of cores used is \code{cores * cores2}. Default is \code{1}.}
 }
 \value{
@@ -67,14 +67,15 @@ parameters for optimization. For SGD, the following parameters can be
 supplied:
 \itemize{
   \item \code{maxit} Maximum number of iterations. Default is \code{100}.
-  \item \code{lr} Learning rate for RMSProp. Default is \code{1e-2}.
+  \item \code{lr} Learning rate for SGD. Default is \code{1e-2}.
   \item \code{reltol} Relative convergence tolerance.
   \item \code{patience} Optimization stops if the relative log-likelihood
   has not decreased by a factor of \code{reltol} within the last
   \code{patience} iterations. Default is \code{5}.
-  \item \code{weight_decay} Weight decay for RMSProp. Default is \code{0}.
+  \item \code{momentum} Momentum for SGD. Default is \code{0.9}.
+  \item \code{weight_decay} Weight decay for SGD. Default is \code{0}.
   \item \code{R0} Fraction of neighbors to use to estimate the initial
-  correlation matrix. Default is \code{0.10}. Must satisfy \code{0 < R0 <= 1}.
+  correlation matrix. Default is \code{0.10}.
 }
 For L-BFGS, the available control parameters and default values are the same
 as those of the \code{\link[stats]{optim}} function from the \strong{stats}
