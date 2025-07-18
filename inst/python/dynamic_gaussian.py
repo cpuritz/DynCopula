@@ -33,10 +33,12 @@ def fit_continuous_gaussian(par0, dx, NX, band, control):
 	# eta history
 	eta_hist = []
 	
-	# Exit codes
-	#  0 = converged
-	#  1 = reached max iterations
-	#  2 = error occurred
+	'''
+	Exit codes:
+	  0  = converged
+	  1 = reached max iterations
+	  2 = error occurred
+	'''
 	exit_code = 1
 	
 	for i in range(max_it):
