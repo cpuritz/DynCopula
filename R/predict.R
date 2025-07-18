@@ -2,10 +2,10 @@
 
 #' Estimate correlation coefficients
 #'
-#' Estimate correlation coefficients using smoothing splines fit in the
-#' unconstrained space.
+#' @description Estimate correlation coefficients using smoothing splines fit
+#' in the unconstrained space.
 #'
-#' @param res Output of \code{fit_dynamic_gaussian}.
+#' @param res Output of \code{fit_dynamic_gaussian} or \code{fit_dynamic_t}.
 #' @param x Times at which to estimate coefficients. Default is \code{res$x}.
 #' @param df Number of degrees of freedom for spline fitting. Default is
 #' \code{NULL}. If \code{NULL}, generalized cross validation is used instead.

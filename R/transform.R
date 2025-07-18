@@ -1,8 +1,8 @@
 ###############################################################################
 
-#' cor2vec
+#' Correlation matrix to vector
 #'
-#' Convert correlation matrix to vector.
+#' @description Convert a correlation matrix to vector.
 #'
 #' @param R A correlation matrix.
 #'
@@ -31,9 +31,9 @@ cor2vec <- function(R) {
 
 ###############################################################################
 
-#' vec2cor
+#' Vector to correlation matrix
 #'
-#' Convert a vector to a correlation matrix.
+#' @description Convert a vector to a correlation matrix.
 #'
 #' @param v A vector.
 #'

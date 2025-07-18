@@ -2,7 +2,7 @@
 % Please edit documentation in R/transform.R
 \name{cor2vec}
 \alias{cor2vec}
-\title{cor2vec}
+\title{Correlation matrix to vector}
 \usage{
 cor2vec(R)
 }
@@ -13,5 +13,5 @@ cor2vec(R)
 A vector.
 }
 \description{
-Convert correlation matrix to vector.
+Convert a correlation matrix to vector.
 }

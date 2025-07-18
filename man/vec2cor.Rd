@@ -2,7 +2,7 @@
 % Please edit documentation in R/transform.R
 \name{vec2cor}
 \alias{vec2cor}
-\title{vec2cor}
+\title{Vector to correlation matrix}
 \usage{
 vec2cor(v)
 }

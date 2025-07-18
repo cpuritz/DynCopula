@@ -7,5 +7,11 @@
 setup()
 }
 \description{
-Utility function to build a Python virtual environment.
+Utility function to build a Python virtual environment for the
+package to use.
+}
+\details{
+The virtual environment is located at
+\code{rappdirs::user_cache_dir("DynCopula")}. A JSON file is also written to
+\code{rappdirs::user_config_dir("DynCopula")}.
 }

@@ -15,12 +15,17 @@ py_load <- function(module = c("dynamic_gaussian", "dynamic_t")) {
 
 #' Build Python virtual environment
 #'
-#' @description Utility function to build a Python virtual environment.
+#' @description Utility function to build a Python virtual environment for the
+#' package to use.
+#'
+#' @details The virtual environment is located at
+#' \code{rappdirs::user_cache_dir("DynCopula")}. A JSON file is also written to
+#' \code{rappdirs::user_config_dir("DynCopula")}.
 #'
 #' @export
 setup <- function() {
-    envname <- file.path(rappdirs::user_cache_dir("DynCopula"), "venv",
-                         "r-dyncopula")
+    cache_dir <- rappdirs::user_cache_dir("DynCopula")
+    envnam <- file.path(cache_dir, "venv", "r-dyncopula")
     reticulate::virtualenv_create(
         envname = envname,
         force = TRUE,
@@ -28,6 +33,7 @@ setup <- function() {
     )
     reticulate::use_virtualenv(envname, required = TRUE)
 
+    # Save path to virtual environment
     config_dir <- rappdirs::user_config_dir("DynCopula")
     if (!dir.exists(config_dir)) {
         dir.create(config_dir)
