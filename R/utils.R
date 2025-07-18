@@ -25,7 +25,7 @@ py_load <- function(module = c("dynamic_gaussian", "dynamic_t")) {
 #' @export
 setup <- function() {
     cache_dir <- rappdirs::user_cache_dir("DynCopula")
-    envnam <- file.path(cache_dir, "venv", "r-dyncopula")
+    envname <- file.path(cache_dir, "venv", "r-dyncopula")
     reticulate::virtualenv_create(
         envname = envname,
         force = TRUE,
