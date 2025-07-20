@@ -28,21 +28,23 @@
 #' supplied:
 #' \itemize{
 #'   \item \code{maxit} Maximum number of iterations. Default is \code{100}.
-#'   \item \code{lr} Learning rate for SGD. Default is \code{1e-2}.
-#'   \item \code{reltol} Relative convergence tolerance.
+#'   \item \code{reltol} Relative convergence tolerance. Default is \code{1e-4}.
+#'   \item \code{lr} Learning rate. Default is \code{1e-5}.
 #'   \item \code{patience} Optimization stops if the relative log-likelihood
 #'   has not decreased by a factor of \code{reltol} within the last
-#'   \code{patience} iterations. Default is \code{5}.
-#'   \item \code{momentum} Momentum for SGD. Default is \code{0.9}.
-#'   \item \code{weight_decay} Weight decay for SGD. Default is \code{0}.
+#'   \code{patience} iterations. Default is \code{3}.
+#'   \item \code{momentum} Momentum factor. Default is \code{0.9}.
+#'   \item \code{max_grad} Gradients with an L-infinity norm above this value
+#'   are clipped. Default is \code{1e3}.
 #'   \item \code{R0} Fraction of neighbors to use to estimate the initial
-#'   correlation matrix. Default is \code{0.10}.
+#'   correlation matrix. Default is \code{0.05}.
 #' }
 #' For L-BFGS, the available control parameters and default values are the same
 #' as those of the \code{\link[stats]{optim}} function from the \strong{stats}
 #' package.
 #'
-#' @return \itemize{
+#' @return A list with the following components:
+#' \itemize{
 #'   \item \code{x}: The input argument \code{x}.
 #'   \item \code{x0}: The input argument \code{x0}.
 #'   \item \code{eta}: Matrix of estimated coefficients in the unconstrained
@@ -72,14 +74,19 @@ fit_dynamic_gaussian <- function(FX,
 
     # Basic checks
     assertthat::assert_that(
+        is.vector(x, mode = "numeric"),
+        is.vector(x0, mode = "numeric"),
+        is.numeric(FX) && is.matrix(FX),
         dim(FX)[1] == length(x),
-        is.null(FXm) || all(dim(FX) == dim(FXm)),
+        is.null(FXm) || (is.numeric(FXm) && is.matrix(FXm) &&
+                             all(dim(FX) == dim(FXm))),
         min(x0) >= min(x),
         max(x0) <= max(x),
         is.character(optMethod),
         is.numeric(band) && band > 0 && band < 1,
         is.numeric(cores) && cores >= 1,
-        is.numeric(cores2) && cores2 >= 1
+        is.numeric(cores2) && cores2 >= 1,
+        is.list(control)
     )
 
     cores <- as.integer(cores)
@@ -92,7 +99,7 @@ fit_dynamic_gaussian <- function(FX,
     # Control parameters common to both optimization methods
     defaults <- list(
         maxit = 100L,
-        R0 = 0.10
+        R0 = 0.05
     )
     control <- utils::modifyList(defaults, control)
     control$maxit <- as.integer(control$maxit)
@@ -105,11 +112,11 @@ fit_dynamic_gaussian <- function(FX,
     # SGD specific control parameters
     if (optMethod == "SGD") {
         sgd_defaults <- list(
-            lr = 1e-2,
-            reltol = 1e-5,
-            patience = 5L,
+            lr = 1e-5,
+            reltol = 1e-4,
+            patience = 3L,
             momentum = 0.9,
-            weight_decay = 0
+            max_grad = 1e3
         )
         control <- utils::modifyList(sgd_defaults, control)
         control$patience <- as.integer(control$patience)
@@ -118,7 +125,7 @@ fit_dynamic_gaussian <- function(FX,
             control$reltol > 0,
             control$patience >= 1L,
             control$momentum >= 0 && control$momentum < 1,
-            control$weight_decay >= 0
+            control$max_grad > 0
         )
     }
 
@@ -156,7 +163,7 @@ fit_dynamic_gaussian <- function(FX,
     colnames(Hhat) <- paste0("eta", ix_lab)
     colnames(Rhat) <- paste0("rho", ix_lab)
 
-    if ("hist" %in% names(res)) {
+    if ("hist" %in% names(res) && is.matrix(res$hist)) {
         labs <- c(paste0("eta", ix_lab), paste0("d_eta", ix_lab))
         res$hist <- t(lapply(res$hist, function(x) {
             rownames(x) <- labs
@@ -194,18 +201,20 @@ fit_dynamic_gaussian <- function(FX,
 #' supplied:
 #' \itemize{
 #'   \item \code{maxit} Maximum number of iterations. Default is \code{100}.
-#'   \item \code{lr} Learning rate for SGD. Default is \code{1e-2}.
-#'   \item \code{reltol} Relative convergence tolerance.
+#'   \item \code{reltol} Relative convergence tolerance. Default is \code{1e-5}.
+#'   \item \code{lr} Learning rate. Default is \code{1e-5}.
 #'   \item \code{patience} Optimization stops if the relative log-likelihood
 #'   has not decreased by a factor of \code{reltol} within the last
-#'   \code{patience} iterations. Default is \code{5}.
-#'   \item \code{momentum} Momentum for SGD. Default is \code{0.9}.
-#'   \item \code{weight_decay} Weight decay for SGD. Default is \code{0}.
+#'   \code{patience} iterations. Default is \code{3}.
+#'   \item \code{momentum} Momentum factor. Default is \code{0.9}.
+#'   \item \code{max_grad} Gradients with an L-infinity norm above this value
+#'   are clipped. Default is \code{1e3}.
 #'   \item \code{R0} Fraction of neighbors to use to estimate the initial
-#'   correlation matrix. Default is \code{0.10}.
+#'   correlation matrix. Default is \code{0.05}.
 #' }
 #'
-#' @return \itemize{
+#' @return A list with the following components:
+#' \itemize{
 #'   \item \code{x}: The input argument \code{x}.
 #'   \item \code{x0}: The input argument \code{x0}.
 #'   \item \code{eta}: Matrix of estimated coefficients in the unconstrained
@@ -227,23 +236,28 @@ fit_dynamic_t <- function(FX,
                           cores = 1L) {
     # Basic checks
     assertthat::assert_that(
+        is.matrix(FX),
+        is.vector(x, mode = "numeric"),
+        is.vector(x0, mode = "numeric"),
         dim(FX)[1] == length(x),
-        nu >= 1,
+        is.numeric(nu) && nu >= 1,
         min(x0) >= min(x),
         max(x0) <= max(x),
         is.numeric(band) && band > 0 && band < 1,
-        is.numeric(cores) && cores >= 1
+        is.numeric(cores) && cores >= 1,
+        is.list(control)
     )
     cores <- as.integer(cores)
 
     # Set control parameters
     defaults <- list(
         maxit = 100L,
-        R0 = 0.10,
-        lr = 1e-2,
-        patience = 5L,
+        R0 = 0.05,
+        reltol = 1e-4,
+        lr = 1e-5,
+        patience = 3L,
         momentum = 0.9,
-        weight_decay = 0
+        max_grad = 1e3
     )
     control <- utils::modifyList(defaults, control)
     control$maxit <- as.integer(control$maxit)
@@ -254,12 +268,12 @@ fit_dynamic_t <- function(FX,
     assertthat::assert_that(all(names(control) %in% names(defaults)))
     assertthat::assert_that(
         control$maxit >= 1L,
-        control$lr > 0,
+        control$R0 > 0 && control$R0 <= 1,
         control$reltol > 0,
+        control$lr > 0,
         control$patience >= 1L,
         control$momentum >= 0 && control$momentum < 1,
-        control$weight_decay >= 0,
-        control$R0 > 0 && control$R0 <= 1
+        control$max_grad > 0
     )
 
     # Sort covariate values and scale to [0, 1]
@@ -328,7 +342,7 @@ fit_dynamic_t <- function(FX,
     lbfgs_optim <- function(x0i) {
         # Use points nearby to estimate initial correlation matrix
         dx <- x - x0i
-        max_thr <- sort(abs(dx))[min(length(dx), dim(NX)[2])]
+        max_thr <- sort(abs(dx))[min(length(dx), ceiling(1 / R0))]
         thr <- max(stats::quantile(abs(dx), R0), max_thr)
         NX_loc <- NX[which(abs(dx) <= thr), ]
 
@@ -407,7 +421,7 @@ fit_dynamic_t <- function(FX,
     sgd_safe <- function(x0i) {
         # Use points nearby to estimate initial correlation matrix
         dx <- x - x0i
-        max_thr <- sort(abs(dx))[min(length(dx), dim(NX)[2])]
+        max_thr <- sort(abs(dx))[min(length(dx), ceiling(1 / R0))]
         thr <- max(stats::quantile(abs(dx), R0), max_thr)
         NX_loc <- NX[which(abs(dx) <= thr), ]
 
@@ -418,9 +432,10 @@ fit_dynamic_t <- function(FX,
         res <- dyn_fit(par0, dx, NX, NXm, band, control)
         loss <- res$hist
 
-        if (res$convergence == 2) {
+        convergence <- res$convergence
+        if (convergence == 2) {
             message("Failed prematurely")
-            par1 <- res$par[1:length(eta0)]
+            par1 <- res$par
             n_itr <- max(control$maxit - length(res$hist), 1L)
             message("Running ", n_itr, " additional iterations")
 
@@ -480,7 +495,7 @@ fit_dynamic_t <- function(FX,
 
         return(list(
             par = res$par[1:length(eta0)],
-            convergence = res$convergence,
+            convergence = convergence,
             loss = loss
         ))
     }
@@ -541,7 +556,7 @@ fit_dynamic_t <- function(FX,
         sgd_optim <- function(x0i) {
             # Use points nearby to estimate initial correlation matrix
             dx <- x - x0i
-            max_thr <- sort(abs(dx))[min(length(dx), dim(NX)[2])]
+            max_thr <- sort(abs(dx))[min(length(dx), ceiling(1 / control$R0))]
             thr <- max(stats::quantile(abs(dx), control$R0), max_thr)
             NX_loc <- NX[which(abs(dx) <= thr), ]
 
@@ -603,7 +618,7 @@ fit_dynamic_t <- function(FX,
         optimize <- function(x0i) {
             # Use points nearby to estimate initial correlation matrix
             dx <- x - x0i
-            max_thr <- sort(abs(dx))[min(length(dx), dim(TX)[2])]
+            max_thr <- sort(abs(dx))[min(length(dx), ceiling(1 / control$R0))]
             thr <- max(stats::quantile(abs(dx), control$R0), max_thr)
             TX_loc <- TX[which(abs(dx) <= thr), ]
             eta0 <- cor2vec(stats::cor(TX_loc, method = "pearson"))
@@ -632,40 +647,6 @@ fit_dynamic_t <- function(FX,
         convergence = sapply(res, '[[', "convergence"),
         loss = lapply(res, '[[', "loss")
     ))
-}
-
-###############################################################################
-
-#' Log-likelihood
-#'
-#' Compute log-likelihood
-#'
-#' @param FX Matrix of pseudo-observations F_i(X_i).
-#' @param FXm Matrix of left limits of distribution functions F_i(X_i - 1).
-#' If \code{NULL}, it is assumed that all margins are continuous.
-#' @param R Correlation matrix.
-#'
-#' @return Log-likelihood
-#'
-#' @export
-loglik <- function(FX, FXm = NULL, R)  {
-    NX <- stats::qnorm(FX)
-    if (is.null(FXm)) {
-        ll <- apply(NX, 1, function(x) {
-            mvtnorm::dmvnorm(x = x, sigma = R)
-        })
-    } else {
-        NXm <- stats::qnorm(FXm)
-        ll <- sapply(seq(dim(FX)[1]), function(i) {
-            TruncatedNormal::mvNcdf(
-                l = NXm[i, ],
-                u = NX[i, ],
-                Sig = R,
-                n = 1e3
-            )$prob
-        })
-    }
-    return(sum(ll))
 }
 
 ###############################################################################

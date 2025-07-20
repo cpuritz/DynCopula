@@ -6,7 +6,7 @@ from distributions import _vec2chol, _log_mvn_density
 ######################################################################
 
 def fit_continuous_gaussian(par0, dx, NX, band, control):
-	max_it = int(control["max_it"])
+	max_it = int(control["maxit"])
 	reltol = control["reltol"]
 	patience = int(control["patience"])
 
@@ -17,13 +17,16 @@ def fit_continuous_gaussian(par0, dx, NX, band, control):
 	)
 	dx = np.array(dx)
 	NX = torch.tensor(NX, dtype = eta.dtype)
-
+	
+	nesterov = True
+	if control["momentum"] == 0:
+		nesterov = False
+        
 	optimizer = torch.optim.SGD(
-	    [eta],
-	    lr = control["lr"],
-	    momentum = control["momentum"],
-	    weight_decay = control["weight_decay"],
-	    nesterov = True
+		[eta],
+		lr = control["lr"],
+		momentum = control["momentum"],
+		nesterov = nesterov
 	)
 	
 	# Record loss history
@@ -35,7 +38,7 @@ def fit_continuous_gaussian(par0, dx, NX, band, control):
 	
 	'''
 	Exit codes:
-	  0  = converged
+	  0 = converged
 	  1 = reached max iterations
 	  2 = error occurred
 	'''
@@ -49,12 +52,17 @@ def fit_continuous_gaussian(par0, dx, NX, band, control):
 
 		# Check for convergence
 		if i >= patience:
-			hp = hist[i - patience]
-			lhist = hist[(i - patience + 1):(i + 1)]
-			if all(abs(hp - h) <= reltol * abs(hp) for h in lhist):
+			eps = 1e-8
+			rel = [
+				abs(hist[i - j] - hist[i - j - 1]) / (abs(hist[i - j - 1]) + eps)
+				for j in range(patience)
+			]
+			if (all(r <= reltol for r in rel)):
 				exit_code = 0
 				break
+		    
 		loss.backward()
+		torch.nn.utils.clip_grad_norm_(eta, max_norm = control["max_grad"])
 		optimizer.step()
 		if torch.isnan(eta).any():
 			exit_code = 2
@@ -104,7 +112,7 @@ def _loglik_cts_gaussian(eta, dx, NX, band):
 ######################################################################
 
 def fit_discrete_gaussian(par0, dx, NX, NXm, band, control):
-	max_it = int(control["max_it"])
+	max_it = int(control["maxit"])
 	reltol = control["reltol"]
 	patience = int(control["patience"])
 
@@ -119,14 +127,15 @@ def fit_discrete_gaussian(par0, dx, NX, NXm, band, control):
 
 	optimizer = torch.optim.RMSprop(
 		[eta],
-		lr = control["lr"],
-		weight_decay = control["weight_decay"]
+		lr = control["lr"]
 	)
 
 	# Record loss history
 	hist = []
 	# Track last good value in case of error
 	eta_good = eta.detach().clone()
+	# eta history
+	eta_hist = []
 	
 	'''
 	Exit codes:
@@ -140,16 +149,23 @@ def fit_discrete_gaussian(par0, dx, NX, NXm, band, control):
 		optimizer.zero_grad()
 		loss = _loglik_discrete_gaussian(eta, dx, NXm, NX, band)
 		hist.append(loss.item())
+		eta_hist.append(eta.detach().clone().unsqueeze(1))
 
 		# Check for convergence
 		if i >= patience:
-			hp = hist[i - patience]
-			lhist = hist[(i - patience + 1):(i + 1)]
-			if all(abs(h - hp) / hp < reltol for h in lhist):
+			eps = 1e-8
+			rel = [
+				abs(hist[i - j] - hist[i - j - 1]) / (abs(hist[i - j - 1]) + eps)
+				for j in range(patience)
+			]
+			if (all(r <= reltol for r in rel)):
 				exit_code = 0
 				break
+		    
 		loss.backward()
+		torch.nn.utils.clip_grad_norm_(eta, max_norm = control["max_grad"])
 		optimizer.step()
+		
 		if torch.isnan(eta).any():
 			exit_code = 2
 			break

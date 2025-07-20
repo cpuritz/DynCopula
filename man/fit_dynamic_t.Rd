@@ -24,6 +24,7 @@ fit_dynamic_t(FX, nu, x, x0, band = 0.1, control = list(), cores = 1L)
 over \code{x0}. Default is \code{1}.}
 }
 \value{
+A list with the following components:
 \itemize{
   \item \code{x}: The input argument \code{x}.
   \item \code{x0}: The input argument \code{x0}.
@@ -45,14 +46,15 @@ parameters for optimization. The following parameters can be
 supplied:
 \itemize{
   \item \code{maxit} Maximum number of iterations. Default is \code{100}.
-  \item \code{lr} Learning rate for SGD. Default is \code{1e-2}.
-  \item \code{reltol} Relative convergence tolerance.
+  \item \code{reltol} Relative convergence tolerance. Default is \code{1e-5}.
+  \item \code{lr} Learning rate. Default is \code{1e-5}.
   \item \code{patience} Optimization stops if the relative log-likelihood
   has not decreased by a factor of \code{reltol} within the last
-  \code{patience} iterations. Default is \code{5}.
-  \item \code{momentum} Momentum for SGD. Default is \code{0.9}.
-  \item \code{weight_decay} Weight decay for SGD. Default is \code{0}.
+  \code{patience} iterations. Default is \code{3}.
+  \item \code{momentum} Momentum factor. Default is \code{0.9}.
+  \item \code{max_grad} Gradients with an L-infinity norm above this value
+  are clipped. Default is \code{1e3}.
   \item \code{R0} Fraction of neighbors to use to estimate the initial
-  correlation matrix. Default is \code{0.10}.
+  correlation matrix. Default is \code{0.05}.
 }
 }

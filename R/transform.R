@@ -58,3 +58,31 @@ vec2cor <- function(v) {
 }
 
 ###############################################################################
+
+#' Pearson to Kendall correlation
+#'
+#' @description This is the pairwise Kendall's tau matrix of the margins of a
+#' distribution with a Gaussian copula with correlation matrix R.
+#'
+#' @param R A correlation matrix.
+#'
+#' @returns A matrix.
+r2tau <- function(R) {
+    2 / pi * asin(R)
+}
+
+###############################################################################
+
+#' Pearson to Spearman correlation
+#'
+#' @description This is the pairwise Spearmans's rho matrix of the margins of a
+#' distribution with a Gaussian copula with correlation matrix R.
+#'
+#' @param R A correlation matrix.
+#'
+#' @returns A matrix.
+r2rho <- function(R) {
+    6 / pi * asin(R / 2)
+}
+
+###############################################################################
