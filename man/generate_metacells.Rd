@@ -4,7 +4,7 @@
 \alias{generate_metacells}
 \title{Generate metacells}
 \usage{
-generate_metacells(sce, col, N, max_width)
+generate_metacells(sce, col, N, max_width, agg = c("mean", "min", "max"))
 }
 \arguments{
 \item{sce}{A SingleCellExperiment.}
@@ -16,6 +16,9 @@ generate_metacells(sce, col, N, max_width)
 \item{max_width}{Maximum difference in pseudotimes allowed for cells assigned
 to the same metacell. Expressed as a fraction of the total range of
 pseudotimes.}
+
+\item{agg}{Method for assigning pseudotimes to metacells. Default is
+\code{"mean"}.}
 }
 \description{
 Generate metacells by binning cells based on their pseudotimes.
