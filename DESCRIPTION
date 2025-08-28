@@ -16,12 +16,11 @@ Imports:
     future,
     future.apply,
     jsonlite,
-    mvtnorm,
-    optimParallel,
+    Matrix,
+    methods,
     parallel,
     progressr,
     rappdirs,
     reticulate,
-    stats,
-    TruncatedNormal,
-    utils
+    SingleCellExperiment,
+    stats
