@@ -4,11 +4,16 @@
 \alias{setup}
 \title{Build Python virtual environment}
 \usage{
-setup()
+setup(python = reticulate::virtualenv_starter(NULL))
+}
+\arguments{
+\item{python}{The path to a Python interpreter.}
+}
+\value{
+Nothing, called for side effects.
 }
 \description{
-Utility function to build a Python virtual environment for the
-package to use.
+Build a Python virtual environment for the package to use.
 }
 \details{
 The virtual environment is located at

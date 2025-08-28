@@ -7,7 +7,7 @@
 predict_rho(res, x = res$x, df = NULL)
 }
 \arguments{
-\item{res}{Output of \code{fit_dynamic_gaussian} or \code{fit_dynamic_t}.}
+\item{res}{Output of \code{fit_dynamic_gaussian}.}
 
 \item{x}{Times at which to estimate coefficients. Default is \code{res$x}.}
 

@@ -4,11 +4,14 @@
 \alias{py_load}
 \title{Load Python module}
 \usage{
-py_load(module = c("dynamic_gaussian", "dynamic_t"))
+py_load(module = c("dynamic_gaussian"))
 }
 \arguments{
 \item{module}{Name of module to load.}
 }
+\value{
+An R object wrapping a Python module.
+}
 \description{
-Utility function to lazily load a Python module.
+Lazily load a Python module.
 }

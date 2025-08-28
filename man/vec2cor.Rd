@@ -7,10 +7,10 @@
 vec2cor(v)
 }
 \arguments{
-\item{v}{A vector.}
+\item{v}{A vector of length \code{choose(d, 2)}.}
 }
 \value{
-A correlation matrix.
+A \code{d}x\code{d} correlation matrix.
 }
 \description{
 Convert a vector to a correlation matrix.

@@ -7,10 +7,10 @@
 cor2vec(R)
 }
 \arguments{
-\item{R}{A correlation matrix.}
+\item{R}{A \code{d}x\code{d} correlation matrix.}
 }
 \value{
-A vector.
+A vector of length \code{choose(d, 2)}.
 }
 \description{
 Convert a correlation matrix to vector.
