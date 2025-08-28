@@ -4,12 +4,16 @@
 #'
 #' @description Convert a correlation matrix to vector.
 #'
-#' @param R A correlation matrix.
+#' @param R A \code{d}x\code{d} correlation matrix.
 #'
-#' @returns A vector.
+#' @returns A vector of length \code{choose(d, 2)}.
 #'
 #' @export
 cor2vec <- function(R) {
+    scale <- 0.5
+    rho_max <- 0.99
+    eps <- 1e-12
+
     d <- dim(R)[1]
 
     # Compute Cholesky factor
@@ -19,13 +23,17 @@ cor2vec <- function(R) {
     H <- matrix(0, nrow = d, ncol = d)
     diag(H) <- 1
     H[, 1] <- L[, 1]
-    for (i in 3:d) {
-        H[i, 2:(i - 1)] <- L[i, 2:(i - 1)] / sqrt(1 - cumsum(L[i, 1:(i - 2)]^2))
+    if (d > 2) {
+        for (i in 3:d) {
+            H[i, 2:(i - 1)] <- L[i, 2:(i - 1)] / sqrt(1 - cumsum(L[i, 1:(i - 2)]^2))
+        }
     }
 
-    # Map to an unconstrained vector in R^(d choose 2)
+    # Map to an unconstrained vector in R^(choose(d, 2))
     vH <- H[lower.tri(H)]
-    vH <- atanh(vH)
+    vH_overflow <- (abs(vH) > rho_max)
+    vH[vH_overflow] <- sign(vH[vH_overflow]) * (rho_max - eps)
+    vH <- (1 / scale) * atanh(vH / rho_max)
     return(vH)
 }
 
@@ -35,18 +43,21 @@ cor2vec <- function(R) {
 #'
 #' @description Convert a vector to a correlation matrix.
 #'
-#' @param v A vector.
+#' @param v A vector of length \code{choose(d, 2)}.
 #'
-#' @returns A correlation matrix.
+#' @returns A \code{d}x\code{d} correlation matrix.
 #'
 #' @export
 vec2cor <- function(v) {
-    d <- as.integer(round((1 + sqrt(1 + 8 * length(v))) / 2))
+    scale <- 0.5
+    rho_max <- 0.99
+
+    d <- as.integer((1 + sqrt(1 + 8 * length(v))) / 2)
 
     # Map unconstrained vector to d x d matrix with entries in (-1, 1)
     H <- matrix(0, nrow = d, ncol = d)
     diag(H) <- 1
-    H[lower.tri(H)] <- tanh(v)
+    H[lower.tri(H)] <- rho_max * tanh(scale * v)
 
     # Map back to Cholesky factor space
     for (i in 2:d) {
@@ -55,34 +66,6 @@ vec2cor <- function(v) {
 
     # Return correlation matrix
     return(tcrossprod(H, H))
-}
-
-###############################################################################
-
-#' Pearson to Kendall correlation
-#'
-#' @description This is the pairwise Kendall's tau matrix of the margins of a
-#' distribution with a Gaussian copula with correlation matrix R.
-#'
-#' @param R A correlation matrix.
-#'
-#' @returns A matrix.
-r2tau <- function(R) {
-    2 / pi * asin(R)
-}
-
-###############################################################################
-
-#' Pearson to Spearman correlation
-#'
-#' @description This is the pairwise Spearmans's rho matrix of the margins of a
-#' distribution with a Gaussian copula with correlation matrix R.
-#'
-#' @param R A correlation matrix.
-#'
-#' @returns A matrix.
-r2rho <- function(R) {
-    6 / pi * asin(R / 2)
 }
 
 ###############################################################################

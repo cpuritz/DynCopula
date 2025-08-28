@@ -1,33 +1,23 @@
 ###############################################################################
 
-#' Fitting dynamic Gaussian copula model
+#' Fitting dynamic Gaussian copula model to continuous data
 #'
-#' @description Fit a dynamic Gaussian copula to time series data.
+#' @description Fit a dynamic Gaussian copula to time series of continuous data.
 #'
 #' @param FX Matrix of pseudo-observations F_i(X_i) at time points.
-#' @param FXm Matrix of left limits of distribution functions F_i(X_i - 1) at
-#' time points. If \code{NULL}, it is assumed that all margins are continuous.
 #' @param x Vector of time points corresponding to \code{FX} and \code{FXm}.
 #' @param x0 Time points to estimate copula parameters at.
-#' @param band Kernel bandwidth. Default is \code{0.10}. Must satisfy
-#' \code{0 < band < 1}.
-#' @param optMethod Optimization method. Either \code{"SGD"} or \code{"L-BFGS"}.
-#' \code{"SGD"} implements stochastic gradient descent with gradients computed
-#' using automatic differentiation. \code{"L-BFGS"} implements the quasi-Newton
-#' limited memory BFGS with gradients estimated numerically. Default is
-#' \code{"SGD"}.
+#' @param x0_ix Indices of time points to estimate copula parameters at.
+#' @param h Kernel bandwidth. Must satisfy \code{0 < h < 1}.
 #' @param control A \code{list} of control parameters for optimization.
 #' @param cores Number of cores to use for parallel optimization. Parallelized
 #' over \code{x0}. Default is \code{1}.
-#' @param cores2 If using \code{"L-BFGS"}, each optimization step can be
-#' parallelized in addition to parallelization over \code{x0}. The total
-#' number of cores used is \code{cores * cores2}. Default is \code{1}.
 #'
-#' @details The \code{control} argument is a list that supplies control
-#' parameters for optimization. For SGD, the following parameters can be
-#' supplied:
+#' @details Optimization is performed using gradient descent. The \code{control}
+#' argument is a list that supplies control parameters for optimization. The
+#' following parameters can be supplied:
 #' \itemize{
-#'   \item \code{maxit} Maximum number of iterations. Default is \code{100}.
+#'   \item \code{max_itr} Maximum number of iterations. Default is \code{100}.
 #'   \item \code{reltol} Relative convergence tolerance. Default is \code{1e-4}.
 #'   \item \code{lr} Learning rate. Default is \code{1e-5}.
 #'   \item \code{patience} Optimization stops if the relative log-likelihood
@@ -36,187 +26,15 @@
 #'   \item \code{momentum} Momentum factor. Default is \code{0.9}.
 #'   \item \code{max_grad} Gradients with an L-infinity norm above this value
 #'   are clipped. Default is \code{1e3}.
-#'   \item \code{R0} Fraction of neighbors to use to estimate the initial
-#'   correlation matrix. Default is \code{0.05}.
 #' }
-#' For L-BFGS, the available control parameters and default values are the same
-#' as those of the \code{\link[stats]{optim}} function from the \strong{stats}
-#' package.
+#' If no improvement is made in the first \code{patience} iterations, the
+#' learning rate is increased by a factor of \code{10}.
 #'
 #' @return A list with the following components:
 #' \itemize{
 #'   \item \code{x}: The input argument \code{x}.
 #'   \item \code{x0}: The input argument \code{x0}.
-#'   \item \code{eta}: Matrix of estimated coefficients in the unconstrained
-#'   space.
-#'   \item \code{rho}: Matrix of estimated pairwise correlation coefficients.
-#'   \item \code{convergence}: Convergence codes for each coefficient.
-#'   \code{0} indicates successful completion. \code{1} indicates that
-#'   iteration limit had been reached.
-#'   \item \code{loss}: Loss history for each coefficient. Only available if
-#'   \code{optMethod} is \code{"SGD"}.
-#' }
-#'
-#' @export
-fit_dynamic_gaussian <- function(FX,
-                                 FXm = NULL,
-                                 x,
-                                 x0,
-                                 band = 0.10,
-                                 optMethod = c("SGD", "L-BFGS"),
-                                 control = list(),
-                                 cores = 1L,
-                                 cores2 = 1L) {
-    optMethod <- match.arg(optMethod)
-    if (is.null(FXm)) {
-        optMethod <- "SGD"
-    }
-
-    # Basic checks
-    assertthat::assert_that(
-        is.vector(x, mode = "numeric"),
-        is.vector(x0, mode = "numeric"),
-        is.numeric(FX) && is.matrix(FX),
-        dim(FX)[1] == length(x),
-        is.null(FXm) || (is.numeric(FXm) && is.matrix(FXm) &&
-                             all(dim(FX) == dim(FXm))),
-        min(x0) >= min(x),
-        max(x0) <= max(x),
-        is.character(optMethod),
-        is.numeric(band) && band > 0 && band < 1,
-        is.numeric(cores) && cores >= 1,
-        is.numeric(cores2) && cores2 >= 1,
-        is.list(control)
-    )
-
-    cores <- as.integer(cores)
-    cores2 <- as.integer(cores2)
-    if (cores2 > 1L && optMethod == "SGD") {
-        message("'cores2' is not used for SGD optimization.")
-    }
-
-    ## Control parameters
-    # Control parameters common to both optimization methods
-    defaults <- list(
-        maxit = 100L,
-        R0 = 0.05
-    )
-    control <- utils::modifyList(defaults, control)
-    control$maxit <- as.integer(control$maxit)
-    assertthat::assert_that(
-        all(sapply(control, is.numeric)),
-        control$maxit >= 1L,
-        control$R0 > 0 && control$R0 <= 1
-    )
-
-    # SGD specific control parameters
-    if (optMethod == "SGD") {
-        sgd_defaults <- list(
-            lr = 1e-5,
-            reltol = 1e-4,
-            patience = 3L,
-            momentum = 0.9,
-            max_grad = 1e3
-        )
-        control <- utils::modifyList(sgd_defaults, control)
-        control$patience <- as.integer(control$patience)
-        assertthat::assert_that(
-            control$lr > 0,
-            control$reltol > 0,
-            control$patience >= 1L,
-            control$momentum >= 0 && control$momentum < 1,
-            control$max_grad > 0
-        )
-    }
-
-    # Sort covariate values and scale to [0, 1]
-    ord <- order(x)
-    x <- x[ord]
-    FX <- FX[ord, ]
-    if (!is.null(FXm)) {
-        FXm <- FXm[ord, ]
-    }
-    min_x <- x[1]
-    dx <- x[length(x)] - min_x
-    x <- (x - min_x) / dx
-    x0 <- (x0 - min_x) / dx
-
-    args <- as.list(environment())
-    if (is.null(FXm)) {
-        fun <- .fit_dynamic_gaussian_cts
-    } else {
-        fun <- .fit_dynamic_gaussian_discrete
-    }
-    res <- do.call(fun, args[names(formals(fun))])
-    eta_vals <- res[["eta_vals"]]
-
-    # Estimated eta matrix
-    Hhat <- do.call(rbind, eta_vals)
-    # Estimated correlation matrix
-    Rhat <- t(apply(Hhat, 1, function(v) {
-        copula::P2p(vec2cor(v))
-    }))
-
-    ix_lab <- apply(utils::combn(seq(dim(FX)[2]), 2), 2, function(x) {
-        paste(x, collapse = '')
-    })
-    colnames(Hhat) <- paste0("eta", ix_lab)
-    colnames(Rhat) <- paste0("rho", ix_lab)
-
-    if ("hist" %in% names(res) && is.matrix(res$hist)) {
-        labs <- c(paste0("eta", ix_lab), paste0("d_eta", ix_lab))
-        res$hist <- t(lapply(res$hist, function(x) {
-            rownames(x) <- labs
-            colnames(x) <- seq(dim(x)[2])
-            return(x)
-        }))
-    }
-
-    res <- c(res[setdiff(names(res), "eta_vals")],
-             list(x = x * dx + min_x,
-                  x0 = x0 * dx + min_x,
-                  eta = data.frame(Hhat),
-                  rho = data.frame(Rhat)))
-    return(res)
-}
-
-###############################################################################
-
-#' Fitting dynamic t copula model
-#'
-#' @description Fit a dynamic t copula to time series data.
-#'
-#' @param FX Matrix of pseudo-observations F_i(X_i) at time points.
-#' @param nu Degrees of freedom.
-#' @param x Vector of time points corresponding to \code{FX} and \code{FXm}.
-#' @param x0 Time points to estimate copula parameters at.
-#' @param band Kernel bandwidth. Default is \code{0.10}. Must satisfy
-#' \code{0 < band < 1}.
-#' @param control A \code{list} of control parameters for optimization.
-#' @param cores Number of cores to use for parallel optimization. Parallelized
-#' over \code{x0}. Default is \code{1}.
-#'
-#' @details The \code{control} argument is a list that supplies control
-#' parameters for optimization. The following parameters can be
-#' supplied:
-#' \itemize{
-#'   \item \code{maxit} Maximum number of iterations. Default is \code{100}.
-#'   \item \code{reltol} Relative convergence tolerance. Default is \code{1e-5}.
-#'   \item \code{lr} Learning rate. Default is \code{1e-5}.
-#'   \item \code{patience} Optimization stops if the relative log-likelihood
-#'   has not decreased by a factor of \code{reltol} within the last
-#'   \code{patience} iterations. Default is \code{3}.
-#'   \item \code{momentum} Momentum factor. Default is \code{0.9}.
-#'   \item \code{max_grad} Gradients with an L-infinity norm above this value
-#'   are clipped. Default is \code{1e3}.
-#'   \item \code{R0} Fraction of neighbors to use to estimate the initial
-#'   correlation matrix. Default is \code{0.05}.
-#' }
-#'
-#' @return A list with the following components:
-#' \itemize{
-#'   \item \code{x}: The input argument \code{x}.
-#'   \item \code{x0}: The input argument \code{x0}.
+#'   \item \code{h}: The input argument \code{h}.
 #'   \item \code{eta}: Matrix of estimated coefficients in the unconstrained
 #'   space.
 #'   \item \code{rho}: Matrix of estimated pairwise correlation coefficients.
@@ -227,50 +45,41 @@ fit_dynamic_gaussian <- function(FX,
 #' }
 #'
 #' @export
-fit_dynamic_t <- function(FX,
-                          nu,
-                          x,
-                          x0,
-                          band = 0.10,
-                          control = list(),
-                          cores = 1L) {
+fit_dynamic_gaussian_cts <- function(FX,
+                                     x,
+                                     x0 = NULL,
+                                     x0_ix = NULL,
+                                     h,
+                                     control = list(),
+                                     cores = 1L) {
     # Basic checks
     assertthat::assert_that(
-        is.matrix(FX),
         is.vector(x, mode = "numeric"),
-        is.vector(x0, mode = "numeric"),
+        is.numeric(FX) && is.matrix(FX),
         dim(FX)[1] == length(x),
-        is.numeric(nu) && nu >= 1,
-        min(x0) >= min(x),
-        max(x0) <= max(x),
-        is.numeric(band) && band > 0 && band < 1,
+        is.numeric(h) && h > 0 && h < 1,
         is.numeric(cores) && cores >= 1,
         is.list(control)
     )
     cores <- as.integer(cores)
 
-    # Set control parameters
+    # Control parameters
     defaults <- list(
-        maxit = 100L,
-        R0 = 0.05,
-        reltol = 1e-4,
+        max_itr = 100L,
         lr = 1e-5,
+        reltol = 1e-4,
         patience = 3L,
         momentum = 0.9,
         max_grad = 1e3
     )
     control <- utils::modifyList(defaults, control)
-    control$maxit <- as.integer(control$maxit)
-    control$patience <- as.integer(control$patience)
-
-    # Check control parameters
-    assertthat::assert_that(all(sapply(control, is.numeric)))
     assertthat::assert_that(all(names(control) %in% names(defaults)))
+
     assertthat::assert_that(
-        control$maxit >= 1L,
-        control$R0 > 0 && control$R0 <= 1,
-        control$reltol > 0,
+        all(sapply(control, is.numeric)),
+        control$max_itr >= 1L,
         control$lr > 0,
+        control$reltol > 0,
         control$patience >= 1L,
         control$momentum >= 0 && control$momentum < 1,
         control$max_grad > 0
@@ -283,370 +92,369 @@ fit_dynamic_t <- function(FX,
     min_x <- x[1]
     dx <- x[length(x)] - min_x
     x <- (x - min_x) / dx
-    x0 <- (x0 - min_x) / dx
+    #x0 <- (x0 - min_x) / dx
 
-    args <- as.list(environment())
-    fun <- .fit_dynamic_t_cts
-    res <- do.call(fun, args[names(formals(fun))])
-    eta_vals <- res[["eta_vals"]]
+    # Convert to standard normal margins
+    NX <- stats::qnorm(FX)
+
+    # Set up futures plan
+    cl <- parallel::makeCluster(cores)
+    future::plan(future::cluster, workers = cl)
+    on.exit(parallel::stopCluster(cl), add = TRUE)
+
+    if (is.null(x0)) {
+        vec <- x0_ix
+        optim <- function(i) {
+            py_load("dynamic_gaussian")$fit_gaussian_cts(
+                par0 = .init_par(x[i], x, NX, h),
+                x = x,
+                NX = NX,
+                h = h,
+                control = control,
+                i = i - 1
+            )
+        }
+    } else {
+        vec <- x0
+        optim <- function(i) {
+            py_load("dynamic_gaussian")$fit_gaussian_cts(
+                par0 = .init_par(i, x, NX, h),
+                x = x,
+                NX = NX,
+                h = h,
+                control = control,
+                x0 = i
+            )
+        }
+    }
+
+    # Parallelized with progress bar
+    progressr::with_progress({
+        pbar <- progressr::progressor(along = vec)
+        res <- future.apply::future_lapply(
+            X = vec,
+            FUN = function(i) {
+                y <- optim(i)
+                pbar()
+                return(y)
+            },
+            future.seed = TRUE
+        )
+    })
+
+    output <- list(
+        eta_vals = lapply(res, '[[', "par"),
+        convergence = sapply(res, '[[', "convergence"),
+        loss = lapply(res, '[[', "loss_hist"),
+        hist = lapply(res, '[[', "eta_hist")
+    )
+    # if ("aic" %in% names(res[[1]])) {
+    #     output <- c(output, list(aic = sapply(res, '[[', "aic")))
+    # }
+    output <- c(output, list(deviance = sapply(res, '[[', "deviance")))
+    output <- c(output, list(df = sapply(res, '[[', "df")))
 
     # Estimated eta matrix
-    Hhat <- do.call(rbind, eta_vals)
+    Hhat <- do.call(rbind, output[["eta_vals"]])
     # Estimated correlation matrix
     Rhat <- t(apply(Hhat, 1, function(v) {
         copula::P2p(vec2cor(v))
     }))
 
-    ix_lab <- apply(utils::combn(seq(dim(FX)[2]), 2), 2, function(x) {
+    d <- dim(FX)[2]
+    if (d == 2) {
+        Rhat <- t(Rhat)
+    }
+
+    # Add numbered eta/rho labels
+    ix_lab <- apply(utils::combn(seq(d), 2), 2, function(x) {
         paste(x, collapse = '')
     })
     colnames(Hhat) <- paste0("eta", ix_lab)
     colnames(Rhat) <- paste0("rho", ix_lab)
 
-    res <- c(res[setdiff(names(res), "eta_vals")],
-             list(x = x * dx + min_x,
-                  x0 = x0 * dx + min_x,
-                  eta = data.frame(Hhat),
-                  rho = data.frame(Rhat)))
-    return(res)
+    if ("hist" %in% names(output) && is.matrix(output$hist)) {
+        labs <- paste0("eta", ix_lab)
+        output$hist <- t(lapply(output$hist, function(x) {
+            rownames(x) <- labs
+            colnames(x) <- seq(dim(x)[2])
+            return(x)
+        }))
+    }
+
+    output <- c(
+        output[setdiff(names(output), "eta_vals")],
+        list(x = x * dx + min_x,
+             x0 = x0,# * dx + min_x,
+             h = h,
+             eta = data.frame(Hhat),
+             rho = data.frame(Rhat))
+    )
+    return(output)
 }
 
 ###############################################################################
 
-#' Fitting dynamic Gaussian copula model for discrete data
+#' Fitting dynamic Gaussian copula model to count data
 #'
-#' @inheritParams fit_dynamic_gaussian
+#' @description Fit a dynamic Gaussian copula to time series of count data.
 #'
-#' @return Estimated coefficients and information about optimization
-.fit_dynamic_gaussian_discrete <- function(FX,
-                                           FXm,
-                                           x,
-                                           x0,
-                                           band,
-                                           optMethod,
-                                           control,
-                                           cores,
-                                           cores2) {
-    # Set up futures plan
-    cl <- parallel::makeCluster(cores)
-    future::plan(future::cluster, workers = cl)
-    on.exit(parallel::stopCluster(cl), add = TRUE)
+#' @param FX Matrix of pseudo-observations F_i(X_i) at time points.
+#' @param FXm Matrix of left limits of distribution functions F_i(X_i - 1) at
+#' time points.
+#' @param x Vector of time points corresponding to \code{FX} and \code{FXm}.
+#' @param x0 Time points to estimate copula parameters at.
+#' @param x0_ix Indices of time points to estimate copula parameters at.
+#' @param h Kernel bandwidth. Must satisfy \code{0 < h < 1}.
+#' @param control A \code{list} of control parameters for optimization.
+#' @param cores Number of cores to use for parallel optimization. Parallelized
+#' over \code{x0}. Default is \code{1}.
+#'
+#' @details Optimization is performed using L-BFGS. The \code{control} argument
+#' is a list that supplies control parameters for optimization. The following
+#' parameters can be supplied:
+#' \itemize{
+#'   \item \code{max_epoch} Maximum number of epochs. Default is \code{1}.
+#'   \item \code{max_itr} Maximum number of internal iterations. Default is
+#'   \code{20}.
+#'   \item \code{history_size} History size. Default is \code{20}.
+#'   \item \code{tolerance_grad} Termination tolerance for gradient. Default is
+#'   \code{1e-7}.
+#'   \item \code{tolerance_change} Termination tolerance for log-likelihood.
+#'   Default is \code{1e-9}.
+#' }
+#'
+#' @return A list with the following components:
+#' \itemize{
+#'   \item \code{x}: The input argument \code{x}.
+#'   \item \code{x0}: The input argument \code{x0}.
+#'   \item \code{h}: The input argument \code{h}.
+#'   \item \code{eta}: Matrix of estimated coefficients in the unconstrained
+#'   space.
+#'   \item \code{rho}: Matrix of estimated pairwise correlation coefficients.
+#'   \item \code{convergence}: Convergence codes for each coefficient.
+#'   \code{0} indicates successful completion. \code{1} indicates that
+#'   iteration limit had been reached.
+#'   \item \code{loss}: Loss history for each coefficient.
+#' }
+#'
+#' @export
+fit_dynamic_gaussian_count <- function(FX,
+                                       FXm,
+                                       x,
+                                       x0 = NULL,
+                                       x0_ix = NULL,
+                                       h,
+                                       control = list(),
+                                       cores = 1L) {
+    # Basic checks
+    assertthat::assert_that(
+        is.vector(x, mode = "numeric"),
+        is.numeric(FX) && is.matrix(FX),
+        is.numeric(FXm) && is.matrix(FXm),
+        dim(FX)[1] == length(x),
+        all(dim(FX) == dim(FXm)),
+        !(is.null(x0) && is.null(x0_ix)),
+        is.numeric(h) && h > 0 && h < 1,
+        is.numeric(cores) && cores >= 1,
+        is.list(control)
+    )
+    cores <- as.integer(cores)
+
+    # Control parameters
+    defaults <- list(
+        max_epoch = 1L,
+        max_itr = 20L,
+        history_size = 20L,
+        tolerance_grad = 1e-7,
+        tolerance_change = 1e-9
+    )
+    control <- utils::modifyList(defaults, control)
+    assertthat::assert_that(all(names(control) %in% names(defaults)))
+
+    assertthat::assert_that(
+        control$max_epoch >= 1,
+        control$max_itr >= 1,
+        control$history_size >= 1,
+        control$tolerance_grad >= 0,
+        control$tolerance_change >= 0
+    )
+
+    # Sort covariate values and scale to [0, 1]
+    ord <- order(x)
+    x <- x[ord]
+    FX <- FX[ord, ]
+    FXm <- FXm[ord, ]
+    min_x <- x[1]
+    dx <- x[length(x)] - min_x
+    x <- (x - min_x) / dx
+    #x0 <- (x0 - min_x) / dx
 
     # Convert to standard normal margins
     NX <- stats::qnorm(FX)
     NXm <- stats::qnorm(FXm)
 
-    R0 <- control$R0
-    control$R0 <- NULL
-
-    lbfgs_optim <- function(x0i) {
-        # Use points nearby to estimate initial correlation matrix
-        dx <- x - x0i
-        max_thr <- sort(abs(dx))[min(length(dx), ceiling(1 / R0))]
-        thr <- max(stats::quantile(abs(dx), R0), max_thr)
-        NX_loc <- NX[which(abs(dx) <= thr), ]
-
-        eta0 <- cor2vec(stats::cor(NX_loc, method = "pearson"))
-        par0 <- c(eta0, rep(0, length(eta0)))
-
-        # Negative local log likelihood function
-        loglik <- function(par) {
-            par <- as.numeric(par)
-
-            # Epanechnikov kernel weights
-            wgt <- 3/(4 * band) * pmax(1 - (dx / band)^2, 0)
-
-            # Only compute densities when weight is nonzero
-            pos_ix <- which(wgt > 0)
-            P <- sapply(pos_ix, function(j) {
-                # Reconstruct correlation matrix
-                npar <- as.integer(length(par) / 2)
-                eta0 <- par[1:npar]
-                eta1 <- par[(npar + 1):(2 * npar)]
-                R <- vec2cor(eta0 + eta1 * dx[j])
-
-                if (min(eigen(R, only.values = TRUE)$values) <= 0) {
-                    # Matrix is theoretically PD but may not be
-                    # numerically PD
-                    return(0)
-                } else {
-                    # Numerical evaluation of Gaussian CDF
-                    return(tryCatch(
-                        TruncatedNormal::mvNcdf(
-                            l = NXm[j, ],
-                            u = NX[j, ],
-                            Sig = R,
-                            n = 1e3
-                        )$prob,
-                        error = function(e) {
-                            # Error often thrown for poorly conditioned
-                            # matrices, return probability of 0
-                            0
-                        }
-                    ))
-                }
-            })
-            if (any(P <= 0)) {
-                # Probabilities are theoretically nonnegative but may
-                # be numerically negative. Return large number instead
-                # of infinity.
-                return(1e20)
-            } else {
-                return(-sum(wgt[pos_ix] * log(P)))
-            }
-        }
-
-        # Create inner cluster
-        cl2 <- parallel::makeCluster(cores2)
-        on.exit(parallel::stopCluster(cl2), add = TRUE)
-        parallel::clusterExport(
-            cl = cl2,
-            varlist = c("vec2cor", "band", "NX", "NXm")
-        )
-
-        # Parallelized L-BFGS optimization
-        res <- optimParallel::optimParallel(
-            par = par0,
-            fn = loglik,
-            parallel = list(cl = cl2),
-            control = control
-        )
-        pbar()
-        return(list(
-            par = res$par[1:length(eta0)],
-            convergence = res$convergence
-        ))
-    }
-
-    sgd_safe <- function(x0i) {
-        # Use points nearby to estimate initial correlation matrix
-        dx <- x - x0i
-        max_thr <- sort(abs(dx))[min(length(dx), ceiling(1 / R0))]
-        thr <- max(stats::quantile(abs(dx), R0), max_thr)
-        NX_loc <- NX[which(abs(dx) <= thr), ]
-
-        eta0 <- cor2vec(stats::cor(NX_loc, method = "pearson"))
-        par0 <- c(eta0, rep(0, length(eta0)))
-
-        dyn_fit <- py_load("dynamic_gaussian")$fit_discrete_gaussian
-        res <- dyn_fit(par0, dx, NX, NXm, band, control)
-        loss <- res$hist
-
-        convergence <- res$convergence
-        if (convergence == 2) {
-            message("Failed prematurely")
-            par1 <- res$par
-            n_itr <- max(control$maxit - length(res$hist), 1L)
-            message("Running ", n_itr, " additional iterations")
-
-            loglik_lbfgs <- function(par) {
-                par <- as.numeric(par)
-
-                # Epanechnikov kernel weights
-                wgt <- 3/(4 * band) * pmax(1 - (dx / band)^2, 0)
-
-                # Only compute densities when weight is nonzero
-                pos_ix <- which(wgt > 0)
-                P <- sapply(pos_ix, function(j) {
-                    # Reconstruct correlation matrix
-                    npar <- as.integer(length(par) / 2)
-                    eta0 <- par[1:npar]
-                    eta1 <- par[(npar + 1):(2 * npar)]
-                    R <- vec2cor(eta0 + eta1 * dx[j])
-
-                    if (min(eigen(R, only.values = TRUE)$values) <= 0) {
-                        # Matrix is theoretically PD but may not be
-                        # numerically PD
-                        return(0)
-                    } else {
-                        # Numerical evaluation of Gaussian CDF
-                        return(tryCatch(
-                            TruncatedNormal::mvNcdf(
-                                l = NXm[j, ],
-                                u = NX[j, ],
-                                Sig = R,
-                                n = 1e3
-                            )$prob,
-                            error = function(e) {
-                                # Error often thrown for poorly conditioned
-                                # matrices, return probability of 0
-                                0
-                            }
-                        ))
-                    }
-                })
-                if (any(P <= 0)) {
-                    # Probabilities are theoretically nonnegative but may
-                    # be numerically negative. Return large number instead
-                    # of infinity.
-                    return(1e20)
-                } else {
-                    return(-sum(wgt[pos_ix] * log(P)))
-                }
-            }
-            res <- stats::optim(
-                par = par1,
-                fn = loglik_lbfgs,
-                method = "L-BFGS-B",
-                control = list(maxit = n_itr)
-            )
-        }
-        pbar()
-
-        return(list(
-            par = res$par[1:length(eta0)],
-            convergence = convergence,
-            loss = loss
-        ))
-    }
-
-    progressr::with_progress({
-        pbar <- progressr::progressor(along = x0)
-        if (optMethod == "L-BFGS") {
-            opt_res <- future.apply::future_lapply(
-                X = x0,
-                FUN = lbfgs_optim,
-                future.seed = TRUE,
-                future.packages = c("parallel", "optimParallel")
-            )
-            return(list(
-                eta_vals = lapply(opt_res, '[[', "par"),
-                convergence = sapply(opt_res, '[[', "convergence")
-            ))
-        } else if (optMethod == "SGD") {
-            opt_res <- future.apply::future_lapply(
-                X = x0,
-                FUN = sgd_safe,
-                future.seed = TRUE
-            )
-            return(list(
-                eta_vals = lapply(opt_res, '[[', "par"),
-                convergence = sapply(opt_res, '[[', "convergence"),
-                loss = lapply(opt_res, '[[', "loss"),
-                hist = lapply(opt_res, '[[', "hist")
-            ))
-        }
-    })
-}
-
-###############################################################################
-
-#' Fitting dynamic Gaussian copula model for continuous data
-#'
-#' @inheritParams fit_dynamic_gaussian
-#'
-#' @return Estimated coefficients and information about optimization
-.fit_dynamic_gaussian_cts <- function(FX,
-                                      x,
-                                      x0,
-                                      band,
-                                      control,
-                                      cores) {
-    # Convert to standard normal margins
-    NX <- stats::qnorm(FX)
-
     # Set up futures plan
     cl <- parallel::makeCluster(cores)
     future::plan(future::cluster, workers = cl)
     on.exit(parallel::stopCluster(cl), add = TRUE)
 
-    progressr::with_progress({
-        pbar <- progressr::progressor(along = x0)
-
-        sgd_optim <- function(x0i) {
-            # Use points nearby to estimate initial correlation matrix
-            dx <- x - x0i
-            max_thr <- sort(abs(dx))[min(length(dx), ceiling(1 / control$R0))]
-            thr <- max(stats::quantile(abs(dx), control$R0), max_thr)
-            NX_loc <- NX[which(abs(dx) <= thr), ]
-
-            eta0 <- cor2vec(stats::cor(NX_loc, method = "pearson"))
-            par0 <- c(eta0, rep(0, length(eta0)))
-
-            dyn_fit <- py_load("dynamic_gaussian")$fit_continuous_gaussian
-            res <- dyn_fit(par0, dx, NX, band, control)
-            pbar()
-
-            return(list(
-                par = res$par[1:length(eta0)],
-                loss = res$loss_hist,
-                convergence = res$convergence,
-                hist = res$eta_hist
-            ))
+    if (is.null(x0)) {
+        vec <- x0_ix
+        optim <- function(i) {
+            py_load("dynamic_gaussian")$fit_gaussian_count(
+                par0 = .init_par(x[i], x, NX, h),
+                x = x,
+                NXm = NXm,
+                NX = NX,
+                h = h,
+                control = control,
+                i = i - 1
+            )
         }
+    } else {
+        vec <- x0
+        optim <- function(i) {
+            py_load("dynamic_gaussian")$fit_gaussian_count(
+                par0 = .init_par(i, x, NX, h),
+                x = x,
+                NXm = NXm,
+                NX = NX,
+                h = h,
+                control = control,
+                x0 = i
+            )
+        }
+    }
 
+    # Parallelized with progress bar
+    progressr::with_progress({
+        pbar <- progressr::progressor(along = vec)
         res <- future.apply::future_lapply(
-            X = x0,
-            FUN = sgd_optim,
+            X = vec,
+            FUN = function(i) {
+                y <- optim(i)
+                pbar()
+                return(y)
+            },
             future.seed = TRUE
         )
     })
 
-    return(list(
+    output <- list(
         eta_vals = lapply(res, '[[', "par"),
         convergence = sapply(res, '[[', "convergence"),
-        loss = lapply(res, '[[', "loss"),
-        hist = lapply(res, '[[', "hist")
-    ))
+        loss = lapply(res, '[[', "loss_hist"),
+        hist = lapply(res, '[[', "eta_hist")
+    )
+    # if ("aic" %in% names(res[[1]])) {
+    #     output <- c(output, list(aic = sapply(res, '[[', "aic")))
+    # }
+    output <- c(output, list(deviance = sapply(res, '[[', "deviance")))
+    output <- c(output, list(df = sapply(res, '[[', "df")))
+
+    # Estimated eta matrix
+    Hhat <- do.call(rbind, output[["eta_vals"]])
+    # Estimated correlation matrix
+    Rhat <- t(apply(Hhat, 1, function(v) {
+        copula::P2p(vec2cor(v))
+    }))
+
+    d <- dim(FX)[2]
+    if (d == 2) {
+        Rhat <- t(Rhat)
+    }
+
+    # Add numbered eta/rho labels
+    ix_lab <- apply(utils::combn(seq(d), 2), 2, function(x) {
+        paste(x, collapse = '')
+    })
+    colnames(Hhat) <- paste0("eta", ix_lab)
+    colnames(Rhat) <- paste0("rho", ix_lab)
+
+    if ("hist" %in% names(output) && is.matrix(output$hist)) {
+        labs <- paste0("eta", ix_lab)
+        output$hist <- t(lapply(output$hist, function(x) {
+            rownames(x) <- labs
+            colnames(x) <- seq(dim(x)[2])
+            return(x)
+        }))
+    }
+
+    output <- c(
+        output[setdiff(names(output), "eta_vals")],
+        list(x = x * dx + min_x,
+             x0 = x0,# * dx + min_x,
+             h = h,
+             eta = data.frame(Hhat),
+             rho = data.frame(Rhat))
+    )
+    return(output)
 }
 
 ###############################################################################
 
-#' Fitting dynamic t copula model for continuous data
+#' Initial parameter guess
 #'
-#' @inheritParams fit_dynamic_t
+#' @param x0 Time point to center around.
+#' @param x Vector of time points.
+#' @param NX Matrix of normal-transformed pseudo-observations.
+#' @param h Bandwidth.
 #'
-#' @return Estimated coefficients and information about optimization
-.fit_dynamic_t_cts <- function(FX,
-                               nu,
-                               x,
-                               x0,
-                               band,
-                               control,
-                               cores) {
-    # Convert to t margins
-    TX <- stats::qt(FX, df = nu)
+#' @returns Parameter vector
+.init_par <- function(x0, x, NX, h) {
+    # Use points nearby to estimate initial correlation matrix
+    dx <- abs(x0 - x)
+    # Ensure that at least d + 1 points are used to avoid a singular
+    # correlation matrix
+    d <- dim(NX)[2]
+    thr <- max((d + 1) / length(x), h)
+    NX_loc <- NX[which(abs(dx) <= thr), ]
+    cor_loc <- stats::cor(NX_loc, method = "pearson")
 
-    # Set up futures plan
-    cl <- parallel::makeCluster(cores)
-    future::plan(future::cluster, workers = cl)
-    on.exit(parallel::stopCluster(cl), add = TRUE)
+    # If computing Cholesky decomposition would fail (cor_loc is probably
+    # numerically not PD), use identity matrix instead
+    if (inherits(try(chol(cor_loc), silent = TRUE), "try-error")) {
+        cor_loc <- diag(d)
+    }
 
-    progressr::with_progress({
-        pbar <- progressr::progressor(along = x0)
+    # Convert to vector
+    par0 <- cor2vec(cor_loc)
+    return(par0)
+}
 
-        optimize <- function(x0i) {
-            # Use points nearby to estimate initial correlation matrix
-            dx <- x - x0i
-            max_thr <- sort(abs(dx))[min(length(dx), ceiling(1 / control$R0))]
-            thr <- max(stats::quantile(abs(dx), control$R0), max_thr)
-            TX_loc <- TX[which(abs(dx) <= thr), ]
-            eta0 <- cor2vec(stats::cor(TX_loc, method = "pearson"))
-            par0 <- c(eta0, rep(0, length(eta0)))
+###############################################################################
 
-            dyn_fit <- py_load("dynamic_t")$fit_continuous_t
-            res <- dyn_fit(par0, nu, dx, TX, band, control)
-            pbar()
+#' Construct Empirical CDF
+#'
+#' @description Construct a function that evaluates the empirical CDF of the
+#' input vector.
+#'
+#' @param x A numeric vector.
+#'
+#' @returns A function.
+#'
+#' @export
+empcdf <- function(x) {
+    assertthat::assert_that(
+        is.numeric(x) && length(x) > 0
+    )
 
-            return(list(
-                par = res$par[1:length(eta0)],
-                loss = res$hist,
-                convergence = res$convergence
-            ))
-        }
+    x <- sort(x)
+    n <- length(x)
+    vals <- unique(x)
+    y <- cumsum(tabulate(match(x, vals))) / (n + 1)
 
-        res <- future.apply::future_lapply(
-            X = x0,
-            FUN = optimize,
-            future.seed = TRUE
-        )
-    })
-
-    return(list(
-        eta_vals = lapply(res, '[[', "par"),
-        convergence = sapply(res, '[[', "convergence"),
-        loss = lapply(res, '[[', "loss")
-    ))
+    fun <- stats::approxfun(
+        x = vals,
+        y = y,
+        method = "constant",
+        yleft = 0,
+        yright = y[length(y)],
+        f = 0,
+        ties = "ordered"
+    )
+    return(fun)
 }
 
 ###############################################################################

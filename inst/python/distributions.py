@@ -1,62 +1,124 @@
 import torch
 import numpy as np
 import math
+import botorch
+from functools import lru_cache
 
-######################################################################
+###############################################################################
+	
+def _local_loglik_cts(
+    eta: torch.Tensor,
+    x: torch.Tensor,
+    x0: torch.Tensor,
+    NX: torch.Tensor,
+    h: float
+) -> torch.Tensor:
+	# Kernel weights
+	u = (x0 - x) / h
+	wgt = 3 / (4 * h) * torch.clamp(1 - u * u, min = 0)
+	mask = wgt > 0
 
-def _log_mvn_density(x, L):
-    d = x.size(0)
-    M = _mahalanobis(L, x)
-    half_log_det = L.diagonal(dim1 = -2, dim2 = -1).log().sum(-1)
-    return -0.5 * (d * math.log(2 * math.pi) + M) - half_log_det
+	# Log likelihoods
+	P = _log_mvn_density(NX[mask, :], eta)
+		
+	# Local log likelihood
+	return torch.dot(wgt[mask], P)
+    
+###############################################################################
 
-######################################################################
+def _local_loglik_count(
+    eta: torch.Tensor,
+    x: torch.Tensor,
+    x0: torch.Tensor,
+    NXm: torch.Tensor,
+    NX: torch.Tensor,
+    h: float
+) -> torch.Tensor:
+    # Kernel weights
+	u = (x0 - x) / h
+	wgt = 3 / (4 * h) * torch.clamp(1 - u * u, min = 0)
+	mask = (wgt > 0)
+	
+	# Log probabilities
+	P = _log_mvn_mass(NXm = NXm[mask, ], NX = NX[mask, ], eta = eta)
 
-def _log_mvt_density(x, L, nu):
-    d = x.size(0)
-    M = _mahalanobis(L, x)
-    half_log_det = L.diagonal(dim1 = -2, dim2 = -1).log().sum(-1)
-    df = torch.tensor(nu, dtype = torch.float64)
-    return (
-        torch.lgamma((df + d) / 2)
-        - torch.lgamma(df / 2)
-        - 0.5 * d * math.log(df * math.pi)
-        - half_log_det
-        - 0.5 * (df + d) * torch.log1p(M / df)
-    )
+	# Local log likelihood
+	return torch.dot(wgt[mask], P)
 
-######################################################################
+###############################################################################
 
-def _mahalanobis(L, x):
-    d = x.size(0)
-    flat_L = L.reshape(-1, d, d)
-    flat_x = x.view(1, d, 1)
-    M = torch.linalg.solve_triangular(flat_L, flat_x, upper = False)
-    return M.pow(2).sum(1).squeeze()
+def _log_mvn_density(x: torch.Tensor, v: torch.Tensor) -> torch.Tensor:
+    d = x.shape[-1]
+    L = _vec2chol(v)
+    M = _mahalanobis(x, L)
+    diag = L.diagonal(dim1 = -2, dim2 = -1)
+    half_log_det = diag.clamp_min(torch.finfo(torch.float64).eps).log().sum(-1)
+    log2pi = x.new_tensor(2.0 * math.pi).log()
+    return -0.5 * (d * log2pi + M) - half_log_det
 
-######################################################################
+###############################################################################
 
-def _vec2chol(v):
-    # Lower triangular indices in column major order
-    d = int(1 + np.sqrt(1 + 8 * v.numel()) / 2)
-    indices = np.stack(np.tril_indices(d, k = -1), axis = 1)
-    sorted_indices = indices[np.lexsort((indices[:, 0], indices[:, 1]))]
-    l_tri = (
-        torch.tensor(sorted_indices[:, 0], dtype = torch.int32),
-        torch.tensor(sorted_indices[:, 1], dtype = torch.int32)
-    )
+def _log_mvn_mass(
+    NXm: torch.Tensor,
+    NX: torch.Tensor,
+    eta: torch.Tensor
+) -> torch.Tensor:
+	# Reconstruct Cholesky factor
+	L = _vec2chol(eta)
+	# Reconstruct correlation matrix
+	R = L @ L.t()
+	
+	# Compute log probabilities
+	bounds = torch.stack((NXm, NX), dim = -1)
+	nbatch = NX.size(0)
+	R_batch = R.unsqueeze(0).expand(nbatch, -1, -1)
+	P = botorch.utils.probability.MVNXPB(R_batch, bounds).solve()
+	return P
 
-    # Transform back to constrained space
-    H = torch.eye(d, dtype = v.dtype)
-    H = H.index_put(l_tri, torch.tanh(v))
+###############################################################################
 
-    # Reconstruct Cholesky factor
-    L = torch.zeros(d, d, dtype = v.dtype)
-    L[0, :] = H[0, :]
+def _mahalanobis(x: torch.Tensor, L: torch.Tensor) -> torch.Tensor:
+    # x: (..., d), L: (..., d, d)
+    m = torch.linalg.solve_triangular(L, x.unsqueeze(-1), upper = False)
+    return (m * m).sum(dim = -2)[..., 0]
+
+###############################################################################
+
+def _vec2chol(
+    v: torch.Tensor,
+    rho_max: float = 0.99,
+    scale: float = 0.5
+) -> torch.Tensor:
+    d = (1 + math.isqrt(1 + 8 * v.numel())) // 2
+
+    # Fill strictly lower-triangular entries of H in column-major order
+    r, c, mask = _tril_col_major(d)
+    H = torch.eye(d, dtype = torch.float64)
+    H[r, c] = rho_max * torch.tanh(scale * v)
+    
+    eps = 1e-12
+    X = H[:, :-1].pow(2).clamp_max(1 - eps)
+    logS = torch.log1p(-X) * mask.to(torch.float64)
+    logcprod = torch.cumsum(logS, dim = 1)
+    sqrtcprod = torch.exp(0.5 * logcprod)
+    
+    L = torch.zeros((d, d), dtype = torch.float64)
     L[:, 0] = H[:, 0]
-    for j in range(1, d):
-        cprod = torch.cumprod(1 - H[j, 0:j]**2, dim = 0)
-        L[j, 1:(j + 1)] = H[j, 1:(j + 1)] * torch.sqrt(cprod)
+    L[:, 1:] = H[:, 1:] * sqrtcprod
     return L
 
-######################################################################
+###############################################################################
+
+@lru_cache(maxsize = 1)
+def _tril_col_major(d: int):
+    # Lower triangular indices in column major order
+    rows, cols = torch.tril_indices(d, d, offset = -1)
+    order = torch.argsort(cols * d + rows)
+    
+    r = torch.arange(d).unsqueeze(1)
+    c = torch.arange(d - 1).unsqueeze(0)
+    mask = (c < r)
+    
+    return rows[order], cols[order], mask
+
+###############################################################################

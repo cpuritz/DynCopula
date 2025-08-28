@@ -1,27 +1,29 @@
 import torch
-import botorch
 import numpy as np
-from distributions import _vec2chol, _log_mvn_density
+from distributions import _local_loglik_cts, _local_loglik_count
+from aic import aic_cts, aic_count
 
-######################################################################
+###############################################################################
 
-def fit_continuous_gaussian(par0, dx, NX, band, control):
-	max_it = int(control["maxit"])
-	reltol = control["reltol"]
+def fit_gaussian_cts(par0, x, NX, h, control, x0 = None, i = None):
+	max_itr = int(control["max_itr"])
 	patience = int(control["patience"])
+	reltol = float(control["reltol"])
 
+	if i is not None:
+	    i = int(i)
+	    x0 = x[i]
+	
 	eta = torch.tensor(
-		par0,
+		np.atleast_1d(par0).tolist(),
 		dtype = torch.float64,
 		requires_grad = True
 	)
-	dx = np.array(dx)
-	NX = torch.tensor(NX, dtype = eta.dtype)
-	
-	nesterov = True
-	if control["momentum"] == 0:
-		nesterov = False
-        
+	x = torch.tensor(x, dtype = torch.float64)
+	x0 = torch.tensor(x0, dtype = torch.float64)
+	NX = torch.tensor(NX, dtype = torch.float64)
+
+	nesterov = (control["momentum"] != 0)
 	optimizer = torch.optim.SGD(
 		[eta],
 		lr = control["lr"],
@@ -44,92 +46,80 @@ def fit_continuous_gaussian(par0, dx, NX, band, control):
 	'''
 	exit_code = 1
 	
-	for i in range(max_it):
+	for j in range(max_itr):
 		optimizer.zero_grad()
-		loss = _loglik_cts_gaussian(eta, dx, NX, band)
-		hist.append(loss.item())
-		eta_hist.append(eta.detach().clone().unsqueeze(1))
+		loss = -1.0 *  _local_loglik_cts(eta, x, x0, NX, h)
+		with torch.no_grad():
+			hist.append(loss.item())
+			eta_hist.append(eta.detach().clone().unsqueeze(1))
 
 		# Check for convergence
-		if i >= patience:
-			eps = 1e-8
+		if j >= patience:
+			eps = 1e-12
 			rel = [
-				abs(hist[i - j] - hist[i - j - 1]) / (abs(hist[i - j - 1]) + eps)
-				for j in range(patience)
+				abs(hist[j - k] - hist[j - k - 1]) / (abs(hist[j - k - 1]) + eps)
+				for k in range(patience)
 			]
-			if (all(r <= reltol for r in rel)):
-				exit_code = 0
-				break
-		    
+			if (all(r >= 0 and r <= reltol for r in rel)):
+			    if len(hist) == patience + 1:
+			        # No improvement has been made, increase learning rate
+			        # before stopping
+			        lr = optimizer.param_groups[0]["lr"]
+			        optimizer.param_groups[0]["lr"] = 10 * lr
+			    else:
+				    exit_code = 0
+				    break
+
 		loss.backward()
 		torch.nn.utils.clip_grad_norm_(eta, max_norm = control["max_grad"])
 		optimizer.step()
 		if torch.isnan(eta).any():
 			exit_code = 2
 			break
-		eta_good = eta.detach().clone()
+		eta_good = eta.clone()
 
-	opt = eta_good.detach().numpy()
+	par_opt = eta_good.detach().numpy()
 	eta_hist = torch.cat(eta_hist, dim = 1).numpy()
+	
+	# Estimate AIC
+	if i is not None:
+	    dev, df = aic_cts(eta_good, x, NX, i, h)
+	else:
+	    dev = None
+	    df = None
+
 	return {
-        "par": opt,
+        "par": par_opt,
         "loss_hist": hist,
         "convergence": int(exit_code),
-        "eta_hist": eta_hist
+        "eta_hist": eta_hist,
+        "deviance": dev,
+        "df": df
     }
+    
+###############################################################################
+
+def fit_gaussian_count(par0, x, NXm, NX, h, control, x0 = None, i = None):
+	max_epoch = int(control["max_epoch"])
+	max_itr = int(control["max_itr"])
+	history_size = int(control["history_size"])
+	tolerance_grad = float(control["tolerance_grad"])
+	tolerance_change = float(control["tolerance_change"])
 	
-######################################################################
+	if i is not None:
+	    i = int(i)
+	    x0 = x[i]
 	
-def _loglik_cts_gaussian(eta, dx, NX, band):
-	d = int(1 + np.sqrt(1 + 4 * eta.numel()) / 2)	
-	
-	# Kernel weights
-	wgt = 3 / (4 * band) * np.maximum(1 - (dx / band) ** 2, 0)
-	pos_ix  = np.where(wgt > 0)[0]
-	wgt = torch.tensor(wgt[pos_ix], dtype = eta.dtype)
-	
-	P = torch.zeros(len(pos_ix), dtype = eta.dtype)
-	npar = int(eta.numel() / 2)
-	loc = torch.zeros(d, dtype = eta.dtype)
-
-	for i in range(len(pos_ix)):
-		v = eta[0:npar] + eta[npar:(2 * npar)] * dx[pos_ix[i]]
-		
-		# Reconstruct Cholesky factor of correlation matrix
-		L = _vec2chol(v)
-		
-		# Log probability
-		# Note: this is not the Gaussian copula density, but rather the only
-		# part of it that depends on the correlation matrix. The additional
-		# term is -ndist.log_prob(u).sum().
-		ndist = torch.distributions.Normal(loc = 0, scale = 1)
-		u = NX[pos_ix[i], :]
-		P[i] = _log_mvn_density(u, L)
-
-	# Weighted negative log likelihood
-	return -torch.sum(wgt * P)
-
-######################################################################
-
-def fit_discrete_gaussian(par0, dx, NX, NXm, band, control):
-	max_it = int(control["maxit"])
-	reltol = control["reltol"]
-	patience = int(control["patience"])
-
 	eta = torch.tensor(
-		par0,
+		np.atleast_1d(par0).tolist(),
 		dtype = torch.float64,
 		requires_grad = True
 	)
-	dx = np.array(dx)
-	NX = torch.tensor(NX, dtype = eta.dtype)
-	NXm = torch.tensor(NXm, dtype = eta.dtype)
-
-	optimizer = torch.optim.RMSprop(
-		[eta],
-		lr = control["lr"]
-	)
-
+	x = torch.tensor(x, dtype = torch.float64)
+	x0 = torch.tensor(x0, dtype = torch.float64)
+	NX = torch.tensor(NX, dtype = torch.float64)
+	NXm = torch.tensor(NXm, dtype = torch.float64)
+	
 	# Record loss history
 	hist = []
 	# Track last good value in case of error
@@ -139,71 +129,50 @@ def fit_discrete_gaussian(par0, dx, NX, NXm, band, control):
 	
 	'''
 	Exit codes:
-	  0  = converged
+	  0 = converged
 	  1 = reached max iterations
 	  2 = error occurred
 	'''
 	exit_code = 1
+
+	optimizer = torch.optim.LBFGS(
+	    [eta],
+	    line_search_fn = "strong_wolfe",
+	    max_iter = max_itr,
+	    history_size = history_size,
+	    tolerance_grad = tolerance_grad,
+	    tolerance_change = tolerance_change
+	)
 	
-	for i in range(max_it):
+	def closure():
 		optimizer.zero_grad()
-		loss = _loglik_discrete_gaussian(eta, dx, NXm, NX, band)
-		hist.append(loss.item())
-		eta_hist.append(eta.detach().clone().unsqueeze(1))
-
-		# Check for convergence
-		if i >= patience:
-			eps = 1e-8
-			rel = [
-				abs(hist[i - j] - hist[i - j - 1]) / (abs(hist[i - j - 1]) + eps)
-				for j in range(patience)
-			]
-			if (all(r <= reltol for r in rel)):
-				exit_code = 0
-				break
-		    
+		loss = -1.0 * _local_loglik_count(eta, x, x0, NXm, NX, h)
 		loss.backward()
-		torch.nn.utils.clip_grad_norm_(eta, max_norm = control["max_grad"])
-		optimizer.step()
-		
-		if torch.isnan(eta).any():
-			exit_code = 2
-			break
-		eta_good = eta.detach().clone()
+		return loss
 
-	opt = eta_good.detach().numpy()
+	for _ in range(max_epoch):
+		loss = optimizer.step(closure)
+		with torch.no_grad():
+			hist.append(loss.detach().item())
+			eta_hist.append(eta.detach().clone().unsqueeze(1))
+			
+	par_opt = eta.detach().numpy()
+	eta_hist = torch.cat(eta_hist, dim = 1).numpy()
+	
+	# Estimate AIC
+	if i is not None:
+	    dev, df = aic_count(eta_good, x, NXm, NX, i, h)
+	else:
+	    dev = None
+	    df = None
+
 	return {
-        "par": opt,
-        "hist": hist,
-        "convergence": int(exit_code)
+        "par": par_opt,
+        "loss_hist": hist,
+        "convergence": int(exit_code),
+        "eta_hist": eta_hist,
+        "deviance": dev,
+        "df": df
     }
 	
-######################################################################
-
-def _loglik_discrete_gaussian(eta, dx, NXm, NX, band):
-	d = int(1 + np.sqrt(1 + 4 * eta.numel()) / 2)
-	
-	wgt = 3 / (4 * band) * np.maximum(1 - (dx / band) ** 2, 0)
-	pos_ix  = np.where(wgt > 0)[0]
-
-	P = torch.zeros(len(pos_ix), dtype = eta.dtype)
-	npar = int(eta.numel() / 2)
-	
-	for i in range(len(pos_ix)):
-		v = eta[0:npar] + eta[npar:(2 * npar)] * dx[pos_ix[i]]
-		# Reconstruct Cholesky factor
-		L = _vec2chol(v)
-		# Reconstruct correlation matrix
-		R = L.matmul(L.t())
-
-		# Compute log probability
-		bounds = np.column_stack((NXm[pos_ix[i], :], NX[pos_ix[i], :]))
-		domain = torch.tensor(bounds, dtype = eta.dtype)
-		P[i] = botorch.utils.probability.MVNXPB(R, domain).solve()
-
-	# Weighted negative log likelihood
-	wgt_tens = torch.tensor(wgt[pos_ix], dtype = eta.dtype)
-	nll = -torch.sum(wgt_tens * P)
-	return nll
-
-######################################################################
+###############################################################################
