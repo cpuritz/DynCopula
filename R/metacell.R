@@ -138,10 +138,14 @@ generate_metacells <- function(sce,
     )
 
     # Build metacell count matrix
-    uint <- seq_len(max(intervals))
     sce_counts <- SingleCellExperiment::counts(sce)
+    interval_ix <- split(seq_len(ncol(sce)), intervals)
+    uint <- seq_along(interval_ix)
+    mc_pseudotimes <- sapply(uint, function(i) {
+        agg(sce$pseudotime[interval_ix[[i]]])
+    })
     mc_counts <- sapply(uint, function(i) {
-        Matrix::rowSums(sce_counts[, intervals == i, drop = FALSE])
+        Matrix::rowSums(sce_counts[, interval_ix[[i]], drop = FALSE])
     })
     mc_counts <- methods::as(mc_counts, "dgCMatrix")
 
@@ -150,6 +154,7 @@ generate_metacells <- function(sce,
         assays = list(counts = mc_counts)
     )
     colnames(mc_sce) <- paste("metacell", uint, sep = '_')
+    mc_sce$pseudotime <- mc_pseudotimes
 
     return(list(
         sce_metacell = mc_sce,
