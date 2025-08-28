@@ -1,19 +1,17 @@
 import torch
-import numpy as np
 import math
-import botorch
 from functools import lru_cache
 
 ###############################################################################
 	
-def _local_loglik_cts(
+def _local_loglik(
     eta: torch.Tensor,
     x: torch.Tensor,
     x0: torch.Tensor,
     NX: torch.Tensor,
     h: float
 ) -> torch.Tensor:
-	# Kernel weights
+	# Epanechnikov kernel weights
 	u = (x0 - x) / h
 	wgt = 3 / (4 * h) * torch.clamp(1 - u * u, min = 0)
 	mask = wgt > 0
@@ -21,27 +19,6 @@ def _local_loglik_cts(
 	# Log likelihoods
 	P = _log_mvn_density(NX[mask, :], eta)
 		
-	# Local log likelihood
-	return torch.dot(wgt[mask], P)
-    
-###############################################################################
-
-def _local_loglik_count(
-    eta: torch.Tensor,
-    x: torch.Tensor,
-    x0: torch.Tensor,
-    NXm: torch.Tensor,
-    NX: torch.Tensor,
-    h: float
-) -> torch.Tensor:
-    # Kernel weights
-	u = (x0 - x) / h
-	wgt = 3 / (4 * h) * torch.clamp(1 - u * u, min = 0)
-	mask = (wgt > 0)
-	
-	# Log probabilities
-	P = _log_mvn_mass(NXm = NXm[mask, ], NX = NX[mask, ], eta = eta)
-
 	# Local log likelihood
 	return torch.dot(wgt[mask], P)
 
@@ -55,25 +32,6 @@ def _log_mvn_density(x: torch.Tensor, v: torch.Tensor) -> torch.Tensor:
     half_log_det = diag.clamp_min(torch.finfo(torch.float64).eps).log().sum(-1)
     log2pi = x.new_tensor(2.0 * math.pi).log()
     return -0.5 * (d * log2pi + M) - half_log_det
-
-###############################################################################
-
-def _log_mvn_mass(
-    NXm: torch.Tensor,
-    NX: torch.Tensor,
-    eta: torch.Tensor
-) -> torch.Tensor:
-	# Reconstruct Cholesky factor
-	L = _vec2chol(eta)
-	# Reconstruct correlation matrix
-	R = L @ L.t()
-	
-	# Compute log probabilities
-	bounds = torch.stack((NXm, NX), dim = -1)
-	nbatch = NX.size(0)
-	R_batch = R.unsqueeze(0).expand(nbatch, -1, -1)
-	P = botorch.utils.probability.MVNXPB(R_batch, bounds).solve()
-	return P
 
 ###############################################################################
 
