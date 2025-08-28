@@ -74,7 +74,7 @@
     # Ensure last cut-point is exactly 1
     cuts[length(cuts)] <- 1
 
-    # Rescale cut points
+    # Rescale cut points to original length scale
     cuts <- (max_x - min_x) * cuts + min_x
 
     # Counts per bin
@@ -95,6 +95,8 @@
 #' @param max_width Maximum difference in pseudotimes allowed for cells assigned
 #' to the same metacell. Expressed as a fraction of the total range of
 #' pseudotimes.
+#' @param agg Method for assigning pseudotimes to metacells. Default is
+#' \code{"mean"}.
 #'
 #' @details Cells are first binned by their pseudotimes. \code{N} sets the
 #' target number of cells per bin, but the number of cells per bin may be
@@ -104,15 +106,22 @@
 #' cells in a single bin are summed to form the metacell's counts.
 #'
 #' @export
-generate_metacells <- function(sce, col, N, max_width) {
+generate_metacells <- function(sce,
+                               col,
+                               N,
+                               max_width,
+                               agg = c("mean", "min", "max")) {
     assertthat::assert_that(
-        is(sce, "SingleCellExperiment"),
+        methods::is(sce, "SingleCellExperiment"),
         is.character(col),
         col %in% colnames(SingleCellExperiment::colData(sce)),
         is.numeric(N) && N > 0,
         is.numeric(max_width) && 0 < max_width && max_width <= 1
     )
     N <- as.integer(N)
+
+    agg <- match.arg(agg)
+    agg <- methods::getFunction(agg, where = getNamespace("base"))
 
     # Get cut points for binning
     times <- sce[[col]]
@@ -134,13 +143,13 @@ generate_metacells <- function(sce, col, N, max_width) {
     mc_counts <- sapply(uint, function(i) {
         Matrix::rowSums(sce_counts[, intervals == i, drop = FALSE])
     })
-    mc_counts <- as(mc_counts, "dgCMatrix")
+    mc_counts <- methods::as(mc_counts, "dgCMatrix")
 
     # Construct SingleCellExperiment object for metacells
     mc_sce <- SingleCellExperiment::SingleCellExperiment(
         assays = list(counts = mc_counts)
     )
-    colnames(mc_sce) <- paste("mc", uint, sep = '_')
+    colnames(mc_sce) <- paste("metacell", uint, sep = '_')
 
     return(list(
         sce_metacell = mc_sce,
