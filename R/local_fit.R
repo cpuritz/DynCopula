@@ -167,7 +167,7 @@ fit_dynamic_gaussian_cts <- function(FX,
     }
 
     # Add numbered eta/rho labels
-    ix_lab <- apply(utils::combn(seq(d), 2), 2, function(x) {
+    ix_lab <- apply(utils::combn(seq_len(d), 2), 2, function(x) {
         paste(x, collapse = '')
     })
     colnames(Hhat) <- paste0("eta", ix_lab)
@@ -177,7 +177,7 @@ fit_dynamic_gaussian_cts <- function(FX,
         labs <- paste0("eta", ix_lab)
         output$hist <- t(lapply(output$hist, function(x) {
             rownames(x) <- labs
-            colnames(x) <- seq(dim(x)[2])
+            colnames(x) <- seq_len(dim(x)[2])
             return(x)
         }))
     }
@@ -366,7 +366,7 @@ fit_dynamic_gaussian_count <- function(FX,
     }
 
     # Add numbered eta/rho labels
-    ix_lab <- apply(utils::combn(seq(d), 2), 2, function(x) {
+    ix_lab <- apply(utils::combn(seq_len(d), 2), 2, function(x) {
         paste(x, collapse = '')
     })
     colnames(Hhat) <- paste0("eta", ix_lab)
@@ -376,7 +376,7 @@ fit_dynamic_gaussian_count <- function(FX,
         labs <- paste0("eta", ix_lab)
         output$hist <- t(lapply(output$hist, function(x) {
             rownames(x) <- labs
-            colnames(x) <- seq(dim(x)[2])
+            colnames(x) <- seq_len(dim(x)[2])
             return(x)
         }))
     }
