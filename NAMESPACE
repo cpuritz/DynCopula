@@ -2,9 +2,9 @@
 
 export(cor2vec)
 export(empcdf)
-export(fit_dynamic_gaussian_count)
-export(fit_dynamic_gaussian_cts)
+export(fit_dynamic_gaussian)
 export(generate_metacells)
 export(predict_rho)
+export(pseudo_obs)
 export(setup)
 export(vec2cor)
