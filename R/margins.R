@@ -8,9 +8,7 @@
 #' @param x A numeric vector.
 #'
 #' @returns A function.
-#'
-#' @export
-empcdf <- function(x) {
+.empcdf <- function(x) {
     assertthat::assert_that(
         is.numeric(x) && length(x) > 0
     )
@@ -40,6 +38,7 @@ empcdf <- function(x) {
 #' pseudo-observations for count-valued data.
 #'
 #' @param X A \code{matrix} or \code{data.frame}.
+#' @param cores Number of cores to use. Default is \code{1}.
 #'
 #' @returns A list containing
 #' \itemize{
@@ -48,17 +47,37 @@ empcdf <- function(x) {
 #' }
 #'
 #' @export
-pseudo_obs <- function(X) {
+pseudo_obs <- function(X, cores = 1L) {
     assertthat::assert_that(
-        is.matrix(X) || is.data.frame(X)
+        is.matrix(X) || is.data.frame(X) || methods::is(X, "Matrix"),
+        is.numeric(cores) && cores >= 1L
     )
-    pX <- apply(X, 2, empcdf)
-    FX <- do.call(cbind, lapply(seq_along(pX), function(i) {
-        pX[[i]](X[, i])
-    }))
-    FXm <- do.call(cbind, lapply(seq_along(pX), function(i) {
-        pX[[i]](X[, i] - 1)
-    }))
+    cores <- as.integer(cores)
+
+    # Construct empirical CDF functions
+    pX <- apply(X, 2, .empcdf)
+
+    # Parallel computation of pseudo-observations with progress bar
+    cl <- parallel::makeCluster(cores)
+    future::plan(future::cluster, workers = cl)
+    on.exit({ future::plan(future::sequential); parallel::stopCluster(cl) },
+            add = TRUE)
+    progressr::with_progress({
+        pbar <- progressr::progressor(along = pX)
+        res <- future.apply::future_lapply(
+            X = seq_along(pX),
+            FUN = function(i) {
+                y <- list(FX = pX[[i]](X[, i]),
+                          FXm = pX[[i]](X[, i] - 1))
+                pbar()
+                return(y)
+            },
+            future.packages = "Matrix"
+        )
+    })
+    FX <- do.call(cbind, lapply(res, '[[', "FX"))
+    FXm <- do.call(cbind, lapply(res, '[[', "FXm"))
+
     return(list(FX = FX, FXm = FXm))
 }
 
