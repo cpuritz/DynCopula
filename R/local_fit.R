@@ -85,7 +85,8 @@ fit_dynamic_correlations <- function(sce,
 
     # Map numeric labels to gene names
     colnames(res$rho) <- sapply(colnames(res$rho), function(x) {
-        ix <- as.numeric(unlist(strsplit(x, split = '_')))
+        x2 <- unlist(strsplit(x, split = "rho"))[2]
+        ix <- as.numeric(unlist(strsplit(x2, split = '_')))
         return(paste(features[ix], collapse = '_'))
     })
 
