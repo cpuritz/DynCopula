@@ -1,10 +1,105 @@
 ###############################################################################
 
-#' Fitting dynamic Gaussian copula model
+#' Time-varying gene correlations
 #'
-#' @description Fit a dynamic Gaussian copula to a time series.
+#' @description Estimate a time-varying gene-gene correlation matrix.
 #'
-#' @param FX Matrix of pseudo-observations F_i(X_i) at time points.
+#' @param sce A SingleCellExperiment.
+#' @param tcol The name of the column containing pseudotimes.
+#' @param t0 A vector of pseudotimes to estimate copula parameters at.
+#' @param features Genes to use. If \code{NULL} (the default), all genes in the
+#' selected assay are used.
+#' @param assay The assay to use. Default is \code{"counts"}.
+#' @param h Kernel bandwidth. Must satisfy \code{0 < h < 1}.
+#' @param control A \code{list} of control parameters for optimization.
+#' @param cores Number of cores to use. Default is \code{1}.
+#'
+#' @details Optimization is performed using gradient descent. The \code{control}
+#' argument is a list that supplies control parameters for optimization. The
+#' following parameters can be supplied:
+#' \itemize{
+#'   \item \code{max_itr} Maximum number of iterations. Default is \code{100}.
+#'   \item \code{reltol} Relative convergence tolerance. Default is \code{1e-5}.
+#'   \item \code{lr} Learning rate. Default is \code{1e-5}.
+#'   \item \code{patience} Optimization stops if the relative log-likelihood
+#'   has not decreased by a factor of \code{reltol} within the last
+#'   \code{patience} iterations. Default is \code{4}.
+#'   \item \code{momentum} Momentum factor. Default is \code{0.9}.
+#'   \item \code{max_grad} Gradients with an L-infinity norm above this value
+#'   are clipped. Default is \code{1e3}.
+#' }
+#' If no improvement is made in the first \code{patience} iterations, the
+#' learning rate is increased by a factor of \code{10}.
+#'
+#' @return A list with the following components:
+#' \itemize{
+#'   \item \code{rho}: Matrix of estimated pairwise correlation coefficients.
+#'   \item \code{convergence}: Convergence codes for each coefficient.
+#'   \code{0} indicates successful completion. \code{1} indicates that
+#'   the iteration limit had been reached. \code{2} indicates that an error
+#'   occurred during optimization.
+#'   \item \code{loss}: Loss history for each coefficient.
+#' }
+#'
+#' @export
+fit_dynamic_correlations <- function(sce,
+                                     tcol,
+                                     t0,
+                                     features = NULL,
+                                     assay = "counts",
+                                     h,
+                                     control = list(),
+                                     cores = 1L) {
+    assertthat::assert_that(
+        methods::is(sce, "SingleCellExperiment"),
+        is.null(features) || is.character(features),
+        is.character(assay) && assay %in% SummarizedExperiment::assayNames(sce),
+        tcol %in% colnames(SummarizedExperiment::colData(sce)),
+        is.numeric(t0)
+    )
+
+    X <- SummarizedExperiment::assay(sce, assay)
+    pseudotimes <- SummarizedExperiment::colData(sce)[[tcol]]
+
+    if (is.null(features)) {
+        features <- rownames(X)
+    } else {
+        assertthat::assert_that(all(features %in% rownames(X)))
+    }
+    X <- Matrix::t(X[features, ])
+
+    message("Computing pseudo-observations")
+    pobs <- DynCopula::pseudo_obs(X, cores = cores)
+
+    message("Estimating correlation coefficients")
+    res <- fit_dynamic_gaussian(
+        FX = pobs$FX,
+        FXm = pobs$FXm,
+        x = pseudotimes,
+        x0 = t0,
+        x0_ix = NULL,
+        h = h,
+        control = control,
+        cores = cores
+    )
+
+    # Map numeric labels to gene names
+    colnames(res$rho) <- sapply(colnames(res$rho), function(x) {
+        ix <- as.numeric(unlist(strsplit(x, split = '_')))
+        return(paste(features[ix], collapse = '_'))
+    })
+
+    res <- res[c("rho", "convergence", "loss")]
+    return(res)
+}
+
+###############################################################################
+
+#' Fit a dynamic Gaussian copula model
+#'
+#' @description Fit a time-varying Gaussian copula to a time series.
+#'
+#' @param FX Matrix of pseudo-observations at time points.
 #' @param FXm Matrix of left limits of pseudo-observations at time points. If
 #' \code{NULL}, data is assumed to be continuous. Otherwise, data is assumed
 #' to be count-valued.
@@ -21,11 +116,11 @@
 #' following parameters can be supplied:
 #' \itemize{
 #'   \item \code{max_itr} Maximum number of iterations. Default is \code{100}.
-#'   \item \code{reltol} Relative convergence tolerance. Default is \code{1e-4}.
+#'   \item \code{reltol} Relative convergence tolerance. Default is \code{1e-5}.
 #'   \item \code{lr} Learning rate. Default is \code{1e-5}.
 #'   \item \code{patience} Optimization stops if the relative log-likelihood
 #'   has not decreased by a factor of \code{reltol} within the last
-#'   \code{patience} iterations. Default is \code{3}.
+#'   \code{patience} iterations. Default is \code{4}.
 #'   \item \code{momentum} Momentum factor. Default is \code{0.9}.
 #'   \item \code{max_grad} Gradients with an L-infinity norm above this value
 #'   are clipped. Default is \code{1e3}.
@@ -43,8 +138,10 @@
 #'   \item \code{rho}: Matrix of estimated pairwise correlation coefficients.
 #'   \item \code{convergence}: Convergence codes for each coefficient.
 #'   \code{0} indicates successful completion. \code{1} indicates that
-#'   iteration limit had been reached.
+#'   the iteration limit had been reached. \code{2} indicates that an error
+#'   occurred during optimization.
 #'   \item \code{loss}: Loss history for each coefficient.
+#'   \item \code{hist}: Coefficient values at each step of optimization.
 #' }
 #'
 #' @export
@@ -74,18 +171,21 @@ fit_dynamic_gaussian <- function(FX,
         FX <- FXm + V * (FX - FXm)
     }
 
-    # Control parameters
+    # Default control parameters
     defaults <- list(
         max_itr = 100L,
         lr = 1e-5,
-        reltol = 1e-4,
-        patience = 3L,
+        reltol = 1e-5,
+        patience = 4L,
         momentum = 0.9,
         max_grad = 1e3
     )
     control <- utils::modifyList(defaults, control)
     assertthat::assert_that(all(names(control) %in% names(defaults)))
+    control$max_itr <- as.integer(control$max_itr)
+    control$patience <- as.integer(control$patience)
 
+    # Verify control parameters
     assertthat::assert_that(
         all(sapply(control, is.numeric)),
         control$max_itr >= 1L,
@@ -103,7 +203,7 @@ fit_dynamic_gaussian <- function(FX,
     min_x <- x[1]
     dx <- x[length(x)] - min_x
     x <- (x - min_x) / dx
-    #x0 <- (x0 - min_x) / dx
+    x0 <- (x0 - min_x) / dx
 
     # Convert to standard normal margins
     NX <- stats::qnorm(FX)
@@ -111,7 +211,8 @@ fit_dynamic_gaussian <- function(FX,
     # Set up futures plan
     cl <- parallel::makeCluster(cores)
     future::plan(future::cluster, workers = cl)
-    on.exit(parallel::stopCluster(cl), add = TRUE)
+    on.exit({ future::plan(future::sequential); parallel::stopCluster(cl) },
+            add = TRUE)
 
     if (is.null(x0)) {
         # Time points to perform inference at are time points at which the time
@@ -174,6 +275,7 @@ fit_dynamic_gaussian <- function(FX,
         copula::P2p(vec2cor(v))
     }))
 
+    # Needed to ensure Rhat is shaped the same for any dimension
     d <- dim(FX)[2]
     if (d == 2) {
         Rhat <- t(Rhat)
@@ -181,7 +283,7 @@ fit_dynamic_gaussian <- function(FX,
 
     # Add numbered eta/rho labels
     ix_lab <- apply(utils::combn(seq_len(d), 2), 2, function(x) {
-        paste(x, collapse = '')
+        paste(x, collapse = '_')
     })
     colnames(Hhat) <- paste0("eta", ix_lab)
     colnames(Rhat) <- paste0("rho", ix_lab)
@@ -198,7 +300,7 @@ fit_dynamic_gaussian <- function(FX,
     output <- c(
         output[setdiff(names(output), "eta_vals")],
         list(x = x * dx + min_x,
-             x0 = x0, # * dx + min_x,
+             x0 = x0 * dx + min_x,
              h = h,
              eta = data.frame(Hhat),
              rho = data.frame(Rhat))
@@ -217,7 +319,7 @@ fit_dynamic_gaussian <- function(FX,
 #'
 #' @returns Parameter vector
 .init_par <- function(x0, x, NX, h) {
-    # Use points nearby to estimate initial correlation matrix
+    # Use nearby points to estimate initial correlation matrix
     dx <- abs(x0 - x)
     # Ensure that at least d + 1 points are used to avoid a singular
     # correlation matrix

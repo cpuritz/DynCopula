@@ -24,4 +24,5 @@ Imports:
     reticulate,
     SingleCellExperiment,
     stats,
+    SummarizedExperiment,
     utils

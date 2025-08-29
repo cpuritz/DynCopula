@@ -4,10 +4,12 @@
 \alias{pseudo_obs}
 \title{Compute pseudo-observations}
 \usage{
-pseudo_obs(X)
+pseudo_obs(X, cores = 1L)
 }
 \arguments{
 \item{X}{A \code{matrix} or \code{data.frame}.}
+
+\item{cores}{Number of cores to use. Default is \code{1}.}
 }
 \value{
 A list containing
