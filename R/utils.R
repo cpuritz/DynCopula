@@ -20,7 +20,8 @@ py_load <- function(module = c("dynamic_gaussian")) {
 
 #' Build Python virtual environment
 #'
-#' @description Build a Python virtual environment for the package to use.
+#' @description Build a Python virtual environment for the package to use. Only
+#' needs to be called once after package installation.
 #'
 #' @param python The path to a Python interpreter.
 #'
@@ -31,7 +32,7 @@ py_load <- function(module = c("dynamic_gaussian")) {
 #' @returns Nothing, called for side effects.
 #'
 #' @export
-setup <- function(python = reticulate::virtualenv_starter(NULL)) {
+pkg_setup <- function(python = reticulate::virtualenv_starter(NULL)) {
     #python <- "/opt/homebrew/opt/python@3.9/bin/python3.9"
     reticulate::use_python(python, required = TRUE)
 
@@ -60,7 +61,7 @@ setup <- function(python = reticulate::virtualenv_starter(NULL)) {
         x = list(envname = jsonlite::unbox(envname)),
         path = file.path(config_dir, "config.json")
     )
-    message("Setup complete! Restart R.")
+    message("Setup complete! Please restart R now.")
 }
 
 ###############################################################################

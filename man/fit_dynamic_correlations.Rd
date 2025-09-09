@@ -4,37 +4,21 @@
 \alias{fit_dynamic_correlations}
 \title{Time-varying gene correlations}
 \usage{
-fit_dynamic_correlations(
-  sce,
-  tcol,
-  t0,
-  features = NULL,
-  assay = "counts",
-  h,
-  control = list(),
-  cores = 1L
-)
+fit_dynamic_correlations(sce, t0, h, control = list())
 }
 \arguments{
-\item{sce}{A SingleCellExperiment.}
-
-\item{tcol}{The name of the column containing pseudotimes.}
+\item{sce}{A \code{SingleCellExperiment}.}
 
 \item{t0}{A vector of pseudotimes to estimate copula parameters at.}
-
-\item{features}{Genes to use. If \code{NULL} (the default), all genes in the
-selected assay are used.}
-
-\item{assay}{The assay to use. Default is \code{"counts"}.}
 
 \item{h}{Kernel bandwidth. Must satisfy \code{0 < h < 1}.}
 
 \item{control}{A \code{list} of control parameters for optimization.}
-
-\item{cores}{Number of cores to use. Default is \code{1}.}
 }
 \value{
-A list with the following components:
+The same \code{SingleCellExperiment} as was passed as input, but
+modified to include a named metadata entry \code{dyn_corr}. This entry is a
+list with the following components:
 \itemize{
   \item \code{rho}: Matrix of estimated pairwise correlation coefficients.
   \item \code{convergence}: Convergence codes for each coefficient.

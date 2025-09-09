@@ -4,15 +4,10 @@
 #'
 #' @description Estimate a time-varying gene-gene correlation matrix.
 #'
-#' @param sce A SingleCellExperiment.
-#' @param tcol The name of the column containing pseudotimes.
+#' @param sce A \code{SingleCellExperiment}.
 #' @param t0 A vector of pseudotimes to estimate copula parameters at.
-#' @param features Genes to use. If \code{NULL} (the default), all genes in the
-#' selected assay are used.
-#' @param assay The assay to use. Default is \code{"counts"}.
 #' @param h Kernel bandwidth. Must satisfy \code{0 < h < 1}.
 #' @param control A \code{list} of control parameters for optimization.
-#' @param cores Number of cores to use. Default is \code{1}.
 #'
 #' @details Optimization is performed using gradient descent. The \code{control}
 #' argument is a list that supplies control parameters for optimization. The
@@ -31,7 +26,9 @@
 #' If no improvement is made in the first \code{patience} iterations, the
 #' learning rate is increased by a factor of \code{10}.
 #'
-#' @return A list with the following components:
+#' @returns The same \code{SingleCellExperiment} as was passed as input, but
+#' modified to include a named metadata entry \code{dyn_corr}. This entry is a
+#' list with the following components:
 #' \itemize{
 #'   \item \code{rho}: Matrix of estimated pairwise correlation coefficients.
 #'   \item \code{convergence}: Convergence codes for each coefficient.
@@ -43,33 +40,25 @@
 #'
 #' @export
 fit_dynamic_correlations <- function(sce,
-                                     tcol,
                                      t0,
-                                     features = NULL,
-                                     assay = "counts",
                                      h,
-                                     control = list(),
-                                     cores = 1L) {
+                                     control = list()) {
     assertthat::assert_that(
         methods::is(sce, "SingleCellExperiment"),
-        is.null(features) || is.character(features),
-        is.character(assay) && assay %in% SummarizedExperiment::assayNames(sce),
-        tcol %in% colnames(SummarizedExperiment::colData(sce)),
+        "dyn_corr_info" %in% names(S4Vectors::metadata(sce)),
+        "metacell_sce" %in% names(S4Vectors::metadata(sce)),
         is.numeric(t0)
     )
 
-    X <- SummarizedExperiment::assay(sce, assay)
-    pseudotimes <- SummarizedExperiment::colData(sce)[[tcol]]
+    metacell_sce <- S4Vectors::metadata(sce)$metacell_sce
 
-    if (is.null(features)) {
-        features <- rownames(X)
-    } else {
-        assertthat::assert_that(all(features %in% rownames(X)))
-    }
-    X <- Matrix::t(X[features, ])
+    info <- S4Vectors::metadata(sce)$dyn_corr_info
+    X <- SummarizedExperiment::assay(metacell_sce, info$assay)
+    X <- Matrix::t(X[info$features, ])
+    pseudotimes <- SummarizedExperiment::colData(metacell_sce)[[info$tcol]]
 
     message("Computing pseudo-observations")
-    pobs <- DynCopula::pseudo_obs(X, cores = cores)
+    pobs <- .pseudo_obs(X, cores = info$cores)
 
     message("Estimating correlation coefficients")
     res <- fit_dynamic_gaussian(
@@ -80,18 +69,20 @@ fit_dynamic_correlations <- function(sce,
         x0_ix = NULL,
         h = h,
         control = control,
-        cores = cores
+        cores = info$cores
     )
 
     # Map numeric labels to gene names
     colnames(res$rho) <- sapply(colnames(res$rho), function(x) {
         x2 <- unlist(strsplit(x, split = "rho"))[2]
         ix <- as.numeric(unlist(strsplit(x2, split = '_')))
-        return(paste(features[ix], collapse = '_'))
+        return(paste(info$features[ix], collapse = '_'))
     })
 
-    res <- res[c("rho", "convergence", "loss")]
-    return(res)
+    res <- res[c("rho", "convergence", "loss", "x0")]
+    names(res)[names(res) == "x0"] <- "t0"
+    S4Vectors::metadata(sce)$dyn_corr <- res
+    return(sce)
 }
 
 ###############################################################################
@@ -226,7 +217,7 @@ fit_dynamic_gaussian <- function(FX,
                 NX = NX,
                 h = h,
                 control = control,
-                i = t0 - 1
+                i = t0 - 1     # change to 0-indexing for python
             )
         }
     } else {
@@ -255,7 +246,8 @@ fit_dynamic_gaussian <- function(FX,
                 pbar()
                 return(y)
             },
-            future.seed = TRUE
+            future.seed = TRUE,
+            future.globals = c("t0", "x", "NX", "h", "control", "pbar")
         )
     })
 

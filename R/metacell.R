@@ -87,16 +87,20 @@
 
 #' Generate metacells
 #'
-#' @description Generate metacells by binning cells based on their pseudotimes.
+#' @description Generate metacells by binning cells based on their pseudotimes
+#' and aggregating counts within bins.
 #'
 #' @param sce A SingleCellExperiment.
-#' @param col The name of the \code{colData} column containing pseudotimes.
 #' @param N Desired number of cells per metacell.
 #' @param max_width Maximum difference in pseudotimes allowed for cells assigned
 #' to the same metacell. Expressed as a fraction of the total range of
 #' pseudotimes.
 #' @param agg Method for assigning pseudotimes to metacells. Default is
 #' \code{"mean"}.
+#'
+#' @returns The same \code{SingleCellExperiment} as was passed as input, but
+#' modified to include named metadata entries \code{metacell_sce} and
+#' \code{metacell_assignment}.
 #'
 #' @details Cells are first binned by their pseudotimes. \code{N} sets the
 #' target number of cells per bin, but the number of cells per bin may be
@@ -107,24 +111,21 @@
 #'
 #' @export
 generate_metacells <- function(sce,
-                               col,
                                N,
                                max_width,
                                agg = c("mean", "min", "max")) {
     assertthat::assert_that(
         methods::is(sce, "SingleCellExperiment"),
-        is.character(col),
-        col %in% colnames(SingleCellExperiment::colData(sce)),
+        "dyn_corr_info" %in% names(S4Vectors::metadata(sce)),
         is.numeric(N) && N > 0,
         is.numeric(max_width) && 0 < max_width && max_width <= 1
     )
     N <- as.integer(N)
-
-    agg <- match.arg(agg)
-    agg <- methods::getFunction(agg, where = getNamespace("base"))
+    info <- S4Vectors::metadata(sce)$dyn_corr_info
+    agg <- methods::getFunction(match.arg(agg), where = getNamespace("base"))
 
     # Get cut points for binning
-    times <- sce[[col]]
+    times <- sce[[info$tcol]]
     bins <- .bin_vector(unique(times), N, max_width)
 
     # Bin pseudotimes
@@ -154,11 +155,13 @@ generate_metacells <- function(sce,
     )
     colnames(mc_sce) <- paste("metacell", uint, sep = '_')
     mc_sce$pseudotime <- mc_pseudotimes
+    S4Vectors::metadata(sce)$metacell_sce <- mc_sce
 
-    return(list(
-        sce_metacell = mc_sce,
-        metacell_assignment = stats::setNames(intervals, colnames(sce))
-    ))
+    # Record metacell assignments
+    mc_assignment <- stats::setNames(intervals, colnames(sce))
+    S4Vectors::metadata(sce)$metacell_assignment <- mc_assignment
+
+    return(sce)
 }
 
 ###############################################################################

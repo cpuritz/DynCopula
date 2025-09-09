@@ -4,12 +4,10 @@
 \alias{generate_metacells}
 \title{Generate metacells}
 \usage{
-generate_metacells(sce, col, N, max_width, agg = c("mean", "min", "max"))
+generate_metacells(sce, N, max_width, agg = c("mean", "min", "max"))
 }
 \arguments{
 \item{sce}{A SingleCellExperiment.}
-
-\item{col}{The name of the \code{colData} column containing pseudotimes.}
 
 \item{N}{Desired number of cells per metacell.}
 
@@ -20,8 +18,14 @@ pseudotimes.}
 \item{agg}{Method for assigning pseudotimes to metacells. Default is
 \code{"mean"}.}
 }
+\value{
+The same \code{SingleCellExperiment} as was passed as input, but
+modified to include named metadata entries \code{metacell_sce} and
+\code{metacell_assignment}.
+}
 \description{
-Generate metacells by binning cells based on their pseudotimes.
+Generate metacells by binning cells based on their pseudotimes
+and aggregating counts within bins.
 }
 \details{
 Cells are first binned by their pseudotimes. \code{N} sets the

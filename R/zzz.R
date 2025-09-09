@@ -20,7 +20,7 @@
     # Print message if the package Python environment has not been configured
     config_path <- file.path(rappdirs::user_config_dir(pkgname), "config.json")
     msg <- paste0("Python environment not yet configured. ", "Run '", pkgname,
-                  "::setup()' to initialize.")
+                  "::pkg_setup()' to initialize.")
     if (!file.exists(config_path)) {
         packageStartupMessage(msg)
     } else {
