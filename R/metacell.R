@@ -127,11 +127,12 @@ generate_metacells <- function(sce,
     # Get cut points for binning
     times <- sce[[info$tcol]]
     bins <- .bin_vector(unique(times), N, max_width)
+    bins <- .bin_vector(times, N, max_width)
 
     # Bin pseudotimes
     intervals <- cut(
         x = times,
-        breaks = bins$cut_points,
+        breaks = unique(bins$cut_points),
         include.lowest = TRUE,
         right = TRUE,
         labels = FALSE

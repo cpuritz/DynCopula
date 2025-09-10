@@ -1,37 +1,5 @@
 ###############################################################################
 
-#' Construct Empirical CDF
-#'
-#' @description Construct a function that evaluates the empirical CDF of the
-#' input vector.
-#'
-#' @param x A numeric vector.
-#'
-#' @returns A function.
-.empcdf <- function(x) {
-    assertthat::assert_that(
-        is.numeric(x) && length(x) > 0
-    )
-
-    x <- sort(x)
-    n <- length(x)
-    vals <- unique(x)
-    y <- cumsum(tabulate(match(x, vals))) / (n + 1)
-
-    fun <- stats::approxfun(
-        x = vals,
-        y = y,
-        method = "constant",
-        yleft = 0,
-        yright = y[length(y)],
-        f = 0,
-        ties = "ordered"
-    )
-    return(fun)
-}
-
-###############################################################################
-
 #' Compute pseudo-observations
 #'
 #' @description Compute pseudo-observations and left-limits of
@@ -121,7 +89,7 @@ fit_margins <- function(sce,
                         sigma_formula) {
     assertthat::assert_that(
         methods::is(sce, "SingleCellExperiment"),
-        "dyn_corr_info" %in% names(S4Vectors::metadata(sce)),
+        "dyn_corr_info" %in% names(metadata(sce)),
         is.character(mu_formula),
         is.character(sigma_formula)
     )
@@ -129,7 +97,7 @@ fit_margins <- function(sce,
 
     message("Fitting marginal distributions")
 
-    info <- S4Vectors::metadata(sce)$dyn_corr_info
+    info <- metadata(sce)$dyn_corr_info
     X <- SummarizedExperiment::assay(sce, info$assay)
     X <- Matrix::t(X[info$features, ])
     pseudotimes <- SummarizedExperiment::colData(sce)[[info$tcol]]
@@ -184,7 +152,7 @@ fit_margins <- function(sce,
     })
 
     names(margins) <- colnames(X)
-    S4Vectors::metadata(sce)$margins <- margins
+    metadata(sce)$margins <- margins
     return(sce)
 }
 

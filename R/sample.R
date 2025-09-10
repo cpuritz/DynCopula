@@ -14,12 +14,11 @@ sample_cells <- function(sce,
                          times) {
     assertthat::assert_that(
         methods::is(sce, "SingleCellExperiment"),
-        "dyn_corr_info" %in% names(S4Vectors::metadata(sce)),
-        "dyn_corr" %in% names(S4Vectors::metadata(sce)),
+        all("dyn_corr_info", "margins", "dyn_corr" %in% names(metadata(sce))),
         is.numeric(times)
     )
 
-    info <- S4Vectors::metadata(sce)$dyn_corr_info
+    info <- metadata(sce)$dyn_corr_info
     ngenes <- length(info$features)
 
     counts <- SummarizedExperiment::assay(sce, info$assay)
@@ -28,12 +27,12 @@ sample_cells <- function(sce,
 
     # Out of the time points at which correlation coefficients were estimated,
     # use the closest one to the specified time
-    t0 <- S4Vectors::metadata(sce)$dyn_corr$t0
+    t0 <- metadata(sce)$dyn_corr$t0
     min_ix <- sapply(times, function(x) { which.min(abs(x - t0)) })
 
     message("Sampling copula")
     rho_split <- apply(
-        X = S4Vectors::metadata(sce)$dyn_corr$rho,
+        X = metadata(sce)$dyn_corr$rho,
         MARGIN = 1,
         FUN = c,
         simplify = FALSE
@@ -65,7 +64,7 @@ sample_cells <- function(sce,
         counts_sim <- lapply(seq_len(ngenes), function(i) {
             mdat <- data.frame(counts[, i], pseudotimes)
             names(mdat) <- c("x", info$tcol)
-            mfun <- S4Vectors::metadata(sce)$margins[[i]]
+            mfun <- metadata(sce)$margins[[i]]
             par_pred <- gamlss::predictAll(
                 object = mfun,
                 newdata = new_times,
@@ -89,7 +88,7 @@ sample_cells <- function(sce,
         assays = list(counts = counts_sim)
     )
     colnames(sce_sim) <- paste0("sim", seq_along(times))
-    rownames(sce_sim) <- S4Vectors::metadata(sce)$dyn_corr_info$features
+    rownames(sce_sim) <- metadata(sce)$dyn_corr_info$features
     sce_sim$pseudotime <- times
     return(sce_sim)
 }

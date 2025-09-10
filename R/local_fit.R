@@ -45,14 +45,14 @@ fit_dynamic_correlations <- function(sce,
                                      control = list()) {
     assertthat::assert_that(
         methods::is(sce, "SingleCellExperiment"),
-        "dyn_corr_info" %in% names(S4Vectors::metadata(sce)),
-        "metacell_sce" %in% names(S4Vectors::metadata(sce)),
+        "dyn_corr_info" %in% names(metadata(sce)),
+        "metacell_sce" %in% names(metadata(sce)),
         is.numeric(t0)
     )
 
-    metacell_sce <- S4Vectors::metadata(sce)$metacell_sce
+    metacell_sce <- metadata(sce)$metacell_sce
 
-    info <- S4Vectors::metadata(sce)$dyn_corr_info
+    info <- metadata(sce)$dyn_corr_info
     X <- SummarizedExperiment::assay(metacell_sce, info$assay)
     X <- Matrix::t(X[info$features, ])
     pseudotimes <- SummarizedExperiment::colData(metacell_sce)[[info$tcol]]
@@ -81,7 +81,7 @@ fit_dynamic_correlations <- function(sce,
 
     res <- res[c("rho", "convergence", "loss", "x0")]
     names(res)[names(res) == "x0"] <- "t0"
-    S4Vectors::metadata(sce)$dyn_corr <- res
+    metadata(sce)$dyn_corr <- res
     return(sce)
 }
 
@@ -195,7 +195,9 @@ fit_dynamic_gaussian <- function(FX,
     min_x <- x[1]
     dx <- x[length(x)] - min_x
     x <- (x - min_x) / dx
-    x0 <- (x0 - min_x) / dx
+    if (!is.null(x0)) {
+        x0 <- (x0 - min_x) / dx
+    }
 
     # Convert to standard normal margins
     NX <- stats::qnorm(FX)
