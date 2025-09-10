@@ -8,7 +8,7 @@ def compute_aic(eta_i, x, NX, i, h):
 
     # Local likelihood function
     def L_local(par):
-    	return _local_loglik_cts(par, x, x[i], NX, h)
+    	return _local_loglik(par, x, x[i], NX, h)
 
     # Model likelihood function
     def L_i(par):
