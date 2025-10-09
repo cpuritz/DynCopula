@@ -11,7 +11,7 @@
 #' @export
 cor2vec <- function(R) {
     scale <- 0.5
-    rho_max <- 0.99
+    rho_max <- 0.999
     eps <- 1e-12
 
     d <- dim(R)[1]
@@ -50,7 +50,7 @@ cor2vec <- function(R) {
 #' @export
 vec2cor <- function(v) {
     scale <- 0.5
-    rho_max <- 0.99
+    rho_max <- 0.999
 
     d <- as.integer((1 + sqrt(1 + 8 * length(v))) / 2)
 
@@ -66,6 +66,22 @@ vec2cor <- function(v) {
 
     # Return correlation matrix
     return(tcrossprod(H, H))
+}
+
+###############################################################################
+
+#' Jittered pseudo-observations
+#'
+#' @description Compute jittered pseudo-observations.
+#'
+#' @param FX Matrix of pseudo-observations at time points.
+#' @param FXm Matrix of left limits of pseudo-observations at time points.
+#'
+#' @returns A matrix of the same size as \code{FX}.
+.jitter <- function(FX, FXm) {
+    V <- matrix(stats::runif(prod(dim(FX))), ncol = ncol(FX))
+    FXj <- FXm + V * (FX - FXm)
+    return(FXj)
 }
 
 ###############################################################################

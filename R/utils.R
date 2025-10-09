@@ -9,11 +9,11 @@
 #' @returns An R object wrapping a Python module.
 py_load <- function(module = c("dynamic_gaussian")) {
     module <- match.arg(module)
-    reticulate::import_from_path(
+    return(reticulate::import_from_path(
         module = module,
         path = system.file("python", package = "DynCopula"),
         delay_load = TRUE
-    )
+    ))
 }
 
 ###############################################################################

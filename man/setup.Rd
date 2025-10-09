@@ -4,12 +4,12 @@
 \alias{setup}
 \title{Setup}
 \usage{
-setup(sce, tcol, features = NULL, assay = "counts", cores = 1L)
+setup(sce, time_col, features = NULL, assay = "counts", cores = 1L)
 }
 \arguments{
 \item{sce}{A \code{SingleCellExperiment}.}
 
-\item{tcol}{The name of the column containing pseudotimes.}
+\item{time_col}{The name of the column containing pseudotimes.}
 
 \item{features}{Genes to use. If \code{NULL} (the default), all genes in the
 selected assay are used.}
@@ -22,9 +22,9 @@ is \code{1L}.}
 \value{
 The same \code{SingleCellExperiment} as was passed as input, but
 modified to include a named metadata entry \code{dyn_corr_info}. This entry
-is a list recording \code{tcol}, \code{features}, \code{assay}, and
+is a list recording \code{time_col}, \code{features}, \code{assay}, and
 \code{cores}.
 }
 \description{
-Setup
+Setup a SingleCellExperiment by adding necessary metadata.
 }

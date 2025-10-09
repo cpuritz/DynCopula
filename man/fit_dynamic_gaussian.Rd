@@ -4,16 +4,7 @@
 \alias{fit_dynamic_gaussian}
 \title{Fit a dynamic Gaussian copula model}
 \usage{
-fit_dynamic_gaussian(
-  FX,
-  FXm = NULL,
-  x,
-  x0 = NULL,
-  x0_ix = NULL,
-  h,
-  control = list(),
-  cores = 1L
-)
+fit_dynamic_gaussian(FX, FXm = NULL, x, x0, h, control = list(), cores = 1L)
 }
 \arguments{
 \item{FX}{Matrix of pseudo-observations at time points.}
@@ -22,11 +13,10 @@ fit_dynamic_gaussian(
 \code{NULL}, data is assumed to be continuous. Otherwise, data is assumed
 to be count-valued.}
 
-\item{x}{Vector of time points corresponding to \code{FX} and \code{FXm}.}
+\item{x}{Vector of time points corresponding to \code{FX} and \code{FXm}.
+Must be sorted and have no duplicates.}
 
 \item{x0}{Time points to estimate copula parameters at.}
-
-\item{x0_ix}{Indices of time points to estimate copula parameters at.}
 
 \item{h}{Kernel bandwidth. Must satisfy \code{0 < h < 1}.}
 
@@ -41,35 +31,27 @@ A list with the following components:
   \item \code{x}: The input argument \code{x}.
   \item \code{x0}: The input argument \code{x0}.
   \item \code{h}: The input argument \code{h}.
+  \item \code{NX}: The normal-transformed pseudo-observations.
   \item \code{eta}: Matrix of estimated coefficients in the unconstrained
   space.
   \item \code{rho}: Matrix of estimated pairwise correlation coefficients.
-  \item \code{convergence}: Convergence codes for each coefficient.
-  \code{0} indicates successful completion. \code{1} indicates that
-  the iteration limit had been reached. \code{2} indicates that an error
-  occurred during optimization.
-  \item \code{loss}: Loss history for each coefficient.
-  \item \code{hist}: Coefficient values at each step of optimization.
 }
 }
 \description{
 Fit a time-varying Gaussian copula to a time series.
 }
 \details{
-Optimization is performed using gradient descent. The \code{control}
-argument is a list that supplies control parameters for optimization. The
-following parameters can be supplied:
+Optimization is performed using L-BFGS. The \code{control} argument
+is a list that supplies control parameters for optimization. The following
+parameters can be supplied:
 \itemize{
-  \item \code{max_itr} Maximum number of iterations. Default is \code{100}.
-  \item \code{reltol} Relative convergence tolerance. Default is \code{1e-5}.
-  \item \code{lr} Learning rate. Default is \code{1e-5}.
-  \item \code{patience} Optimization stops if the relative log-likelihood
-  has not decreased by a factor of \code{reltol} within the last
-  \code{patience} iterations. Default is \code{4}.
-  \item \code{momentum} Momentum factor. Default is \code{0.9}.
-  \item \code{max_grad} Gradients with an L-infinity norm above this value
-  are clipped. Default is \code{1e3}.
+  \item \code{max_epoch} Maximum number of epochs. Default is \code{1}.
+  \item \code{max_itr} Maximum number of internal iterations. Default is
+  \code{100}.
+  \item \code{history_size} History size. Default is \code{30}.
+  \item \code{tolerance_grad} Termination tolerance for gradient. Default is
+  \code{1e-7}.
+  \item \code{tolerance_change} Termination tolerance for log-likelihood.
+  Default is \code{1e-9}.
 }
-If no improvement is made in the first \code{patience} iterations, the
-learning rate is increased by a factor of \code{10}.
 }

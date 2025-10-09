@@ -5,46 +5,41 @@
 #' @description Compute pseudo-observations and left-limits of
 #' pseudo-observations for count-valued data.
 #'
-#' @param X A \code{matrix} or \code{data.frame}.
-#' @param cores Number of cores to use. Default is \code{1}.
+#' @param sce A \code{SingleCellExperiment}.
 #'
 #' @returns A list containing
 #' \itemize{
 #'    \item \code{FX} Pseudo-observations
 #'    \item \code{FXm} Left limits of pseudo-observations
 #' }
-.pseudo_obs <- function(X, cores = 1L) {
-    assertthat::assert_that(
-        is.matrix(X) || is.data.frame(X) || methods::is(X, "Matrix"),
-        is.numeric(cores) && cores >= 1L
-    )
-    cores <- as.integer(cores)
+.pseudo_obs <- function(sce) {
+    info <- metadata(sce)$dyn_corr_info
+    counts <- SummarizedExperiment::assay(sce, info$assay)
+    counts <- Matrix::t(counts[info$features, ])
+    pseudotimes <- SummarizedExperiment::colData(sce)[[info$time_col]]
 
-    # Construct empirical CDF functions
-    pX <- apply(X, 2, .empcdf)
+    pobs <- lapply(seq_along(info$features), function(i) {
+        mdat <- data.frame(counts[, i], pseudotimes)
+        names(mdat) <- c("x", info$time_col)
+        mfit <- metadata(sce)$margins[[i]]
 
-    # Parallel computation of pseudo-observations with progress bar
-    cl <- parallel::makeCluster(cores)
-    future::plan(future::cluster, workers = cl)
-    on.exit({ future::plan(future::sequential); parallel::stopCluster(cl) },
-            add = TRUE)
-    progressr::with_progress({
-        pbar <- progressr::progressor(along = pX)
-        res <- future.apply::future_lapply(
-            X = seq_along(pX),
-            FUN = function(i) {
-                y <- list(FX = pX[[i]](X[, i]),
-                          FXm = pX[[i]](X[, i] - 1))
-                pbar()
-                return(y)
-            },
-            future.packages = "Matrix"
+        par <- gamlss::predictAll(
+            object = mfit,
+            type = "response",
+            data = mdat
         )
-    })
-    FX <- do.call(cbind, lapply(res, '[[', "FX"))
-    FXm <- do.call(cbind, lapply(res, '[[', "FXm"))
+        par$y <- NULL
 
-    return(list(FX = FX, FXm = FXm))
+        pfun <- getExportedValue("gamlss.dist", paste0("p", mfit$family[1]))
+        pX <- function(x) {
+            do.call(pfun, c(list(q = x), par))
+        }
+        return(list(FX = pX(counts[, i]), FXm = pX(counts[, i] - 1)))
+    })
+    return(list(
+        FX = do.call(cbind, lapply(pobs, '[[', "FX")),
+        FXm = do.call(cbind, lapply(pobs, '[[', "FXm"))
+    ))
 }
 
 ###############################################################################
@@ -56,11 +51,12 @@
 #' all combinations.
 #'
 #' @param sce A \code{SingleCellExperiment}.
-#' @param family Family to use. Either \code{"NBI"} (negative binomial) or
-#' \code{"ZINBI"} (zero-inflated negative binomial).
-#' @param mu_formula A vector of strings specifying formulas for the mean
+#' @param family A character vector specifying families to use. Options are
+#' \code{"NBI"} (negative binomial) and \code{"ZINBI"}
+#' (zero-inflated negative binomial).
+#' @param mu_formula A character vector specifying formulas for the mean
 #' parameter.
-#' @param sigma_formula A vector of strings specifying formulas for the
+#' @param sigma_formula A character vector specifying formulas for the
 #' dispersion parameter.
 #'
 #' @returns The same \code{SingleCellExperiment} as was passed as input, but
@@ -68,7 +64,7 @@
 #' of marginal models.
 #'
 #' @details Formulas should be written as a function of the name of the
-#' pseudotime column (what was passed as the argument \code{tcol} to
+#' pseudotime column (what was passed as the argument \code{time_col} to
 #' \link[DynCopula]{setup}). Only the righthand side of the formula should be
 #' passed. For example (if the pseudotime column is named \code{"pseudotime"}):
 #' \itemize{
@@ -87,7 +83,7 @@ fit_margins <- function(sce,
                         family = c("NBI", "ZINBI"),
                         mu_formula,
                         sigma_formula) {
-    assertthat::assert_that(
+    assert_that(
         methods::is(sce, "SingleCellExperiment"),
         "dyn_corr_info" %in% names(metadata(sce)),
         is.character(mu_formula),
@@ -95,12 +91,16 @@ fit_margins <- function(sce,
     )
     family <- match.arg(family, several.ok = TRUE)
 
+    metadata(sce)$dyn_corr_info$family <- family
+    metadata(sce)$dyn_corr_info$mu_formula <- mu_formula
+    metadata(sce)$dyn_corr_info$sigma_formula <- sigma_formula
+
     message("Fitting marginal distributions")
 
     info <- metadata(sce)$dyn_corr_info
     X <- SummarizedExperiment::assay(sce, info$assay)
     X <- Matrix::t(X[info$features, ])
-    pseudotimes <- SummarizedExperiment::colData(sce)[[info$tcol]]
+    pseudotimes <- SummarizedExperiment::colData(sce)[[info$time_col]]
 
     cl <- parallel::makeCluster(info$cores)
     future::plan(future::cluster, workers = cl)
@@ -124,12 +124,12 @@ fit_margins <- function(sce,
             X = X_slices,
             FUN = function(x) {
                 ddata <- data.frame(x, pseudotimes)
-                names(ddata) <- c("x", info$tcol)
+                names(ddata) <- c("x", info$time_col)
                 models <- lapply(seq_len(dim(combs)[1]), function(i) {
                     fmu <- paste("x ~", combs[i, "mu_formula"])
                     fsigma <- paste("~", combs[i, "sigma_formula"])
                     fname <- combs[i, "family"]
-                    fam <- utils::getFromNamespace(fname, "gamlss.dist")
+                    fam <- getExportedValue("gamlss.dist", fname)
                     fit <- gamlss::gamlss(
                         formula = stats::formula(fmu),
                         sigma.formula = stats::formula(fsigma),

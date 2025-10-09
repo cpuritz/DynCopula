@@ -114,19 +114,18 @@ generate_metacells <- function(sce,
                                N,
                                max_width,
                                agg = c("mean", "min", "max")) {
-    assertthat::assert_that(
+    assert_that(
         methods::is(sce, "SingleCellExperiment"),
-        "dyn_corr_info" %in% names(S4Vectors::metadata(sce)),
+        "dyn_corr_info" %in% names(metadata(sce)),
         is.numeric(N) && N > 0,
         is.numeric(max_width) && 0 < max_width && max_width <= 1
     )
     N <- as.integer(N)
-    info <- S4Vectors::metadata(sce)$dyn_corr_info
-    agg <- methods::getFunction(match.arg(agg), where = getNamespace("base"))
+    info <- metadata(sce)$dyn_corr_info
+    agg <- getExportedValue("base", match.arg(agg))
 
     # Get cut points for binning
-    times <- sce[[info$tcol]]
-    bins <- .bin_vector(unique(times), N, max_width)
+    times <- sce[[info$time_col]]
     bins <- .bin_vector(times, N, max_width)
 
     # Bin pseudotimes
@@ -156,11 +155,20 @@ generate_metacells <- function(sce,
     )
     colnames(mc_sce) <- paste("metacell", uint, sep = '_')
     mc_sce$pseudotime <- mc_pseudotimes
-    S4Vectors::metadata(sce)$metacell_sce <- mc_sce
+    metadata(mc_sce)$dyn_corr_info <- metadata(sce)$dyn_corr_info
 
-    # Record metacell assignments
+    # Fit margins to metacells
+    mc_sce <- fit_margins(
+        mc_sce,
+        family = metadata(mc_sce)$dyn_corr_info$family,
+        mu_formula = metadata(mc_sce)$dyn_corr_info$mu_formula,
+        sigma_formula = metadata(mc_sce)$dyn_corr_info$sigma_formula
+    )
+
+    # Save metacells
+    metadata(sce)$metacell_sce <- mc_sce
     mc_assignment <- stats::setNames(intervals, colnames(sce))
-    S4Vectors::metadata(sce)$metacell_assignment <- mc_assignment
+    metadata(sce)$metacell_assignment <- mc_assignment
 
     return(sce)
 }

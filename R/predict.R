@@ -23,7 +23,7 @@
 predict_rho <- function(res,
                         x = res$x,
                         df = NULL) {
-    assertthat::assert_that(length(res$x0) >= 4)
+    assert_that(length(res$x0) >= 4)
 
     # Predict eta values using smooth splines
     eta_pred <- apply(res$eta, 2, function(y) {

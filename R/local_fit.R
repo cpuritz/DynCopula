@@ -1,92 +1,5 @@
 ###############################################################################
 
-#' Time-varying gene correlations
-#'
-#' @description Estimate a time-varying gene-gene correlation matrix.
-#'
-#' @param sce A \code{SingleCellExperiment}.
-#' @param t0 A vector of pseudotimes to estimate copula parameters at.
-#' @param h Kernel bandwidth. Must satisfy \code{0 < h < 1}.
-#' @param control A \code{list} of control parameters for optimization.
-#'
-#' @details Optimization is performed using gradient descent. The \code{control}
-#' argument is a list that supplies control parameters for optimization. The
-#' following parameters can be supplied:
-#' \itemize{
-#'   \item \code{max_itr} Maximum number of iterations. Default is \code{100}.
-#'   \item \code{reltol} Relative convergence tolerance. Default is \code{1e-5}.
-#'   \item \code{lr} Learning rate. Default is \code{1e-5}.
-#'   \item \code{patience} Optimization stops if the relative log-likelihood
-#'   has not decreased by a factor of \code{reltol} within the last
-#'   \code{patience} iterations. Default is \code{4}.
-#'   \item \code{momentum} Momentum factor. Default is \code{0.9}.
-#'   \item \code{max_grad} Gradients with an L-infinity norm above this value
-#'   are clipped. Default is \code{1e3}.
-#' }
-#' If no improvement is made in the first \code{patience} iterations, the
-#' learning rate is increased by a factor of \code{10}.
-#'
-#' @returns The same \code{SingleCellExperiment} as was passed as input, but
-#' modified to include a named metadata entry \code{dyn_corr}. This entry is a
-#' list with the following components:
-#' \itemize{
-#'   \item \code{rho}: Matrix of estimated pairwise correlation coefficients.
-#'   \item \code{convergence}: Convergence codes for each coefficient.
-#'   \code{0} indicates successful completion. \code{1} indicates that
-#'   the iteration limit had been reached. \code{2} indicates that an error
-#'   occurred during optimization.
-#'   \item \code{loss}: Loss history for each coefficient.
-#' }
-#'
-#' @export
-fit_dynamic_correlations <- function(sce,
-                                     t0,
-                                     h,
-                                     control = list()) {
-    assertthat::assert_that(
-        methods::is(sce, "SingleCellExperiment"),
-        "dyn_corr_info" %in% names(metadata(sce)),
-        "metacell_sce" %in% names(metadata(sce)),
-        is.numeric(t0)
-    )
-
-    metacell_sce <- metadata(sce)$metacell_sce
-
-    info <- metadata(sce)$dyn_corr_info
-    X <- SummarizedExperiment::assay(metacell_sce, info$assay)
-    X <- Matrix::t(X[info$features, ])
-    pseudotimes <- SummarizedExperiment::colData(metacell_sce)[[info$tcol]]
-
-    message("Computing pseudo-observations")
-    pobs <- .pseudo_obs(X, cores = info$cores)
-
-    message("Estimating correlation coefficients")
-    res <- fit_dynamic_gaussian(
-        FX = pobs$FX,
-        FXm = pobs$FXm,
-        x = pseudotimes,
-        x0 = t0,
-        x0_ix = NULL,
-        h = h,
-        control = control,
-        cores = info$cores
-    )
-
-    # Map numeric labels to gene names
-    colnames(res$rho) <- sapply(colnames(res$rho), function(x) {
-        x2 <- unlist(strsplit(x, split = "rho"))[2]
-        ix <- as.numeric(unlist(strsplit(x2, split = '_')))
-        return(paste(info$features[ix], collapse = '_'))
-    })
-
-    res <- res[c("rho", "convergence", "loss", "x0")]
-    names(res)[names(res) == "x0"] <- "t0"
-    metadata(sce)$dyn_corr <- res
-    return(sce)
-}
-
-###############################################################################
-
 #' Fit a dynamic Gaussian copula model
 #'
 #' @description Fit a time-varying Gaussian copula to a time series.
@@ -96,108 +9,94 @@ fit_dynamic_correlations <- function(sce,
 #' \code{NULL}, data is assumed to be continuous. Otherwise, data is assumed
 #' to be count-valued.
 #' @param x Vector of time points corresponding to \code{FX} and \code{FXm}.
+#' Must be sorted and have no duplicates.
 #' @param x0 Time points to estimate copula parameters at.
-#' @param x0_ix Indices of time points to estimate copula parameters at.
 #' @param h Kernel bandwidth. Must satisfy \code{0 < h < 1}.
 #' @param control A \code{list} of control parameters for optimization.
 #' @param cores Number of cores to use for parallel optimization. Parallelized
 #' over \code{x0}. Default is \code{1}.
 #'
-#' @details Optimization is performed using gradient descent. The \code{control}
-#' argument is a list that supplies control parameters for optimization. The
-#' following parameters can be supplied:
+#' @details Optimization is performed using L-BFGS. The \code{control} argument
+#' is a list that supplies control parameters for optimization. The following
+#' parameters can be supplied:
 #' \itemize{
-#'   \item \code{max_itr} Maximum number of iterations. Default is \code{100}.
-#'   \item \code{reltol} Relative convergence tolerance. Default is \code{1e-5}.
-#'   \item \code{lr} Learning rate. Default is \code{1e-5}.
-#'   \item \code{patience} Optimization stops if the relative log-likelihood
-#'   has not decreased by a factor of \code{reltol} within the last
-#'   \code{patience} iterations. Default is \code{4}.
-#'   \item \code{momentum} Momentum factor. Default is \code{0.9}.
-#'   \item \code{max_grad} Gradients with an L-infinity norm above this value
-#'   are clipped. Default is \code{1e3}.
+#'   \item \code{max_epoch} Maximum number of epochs. Default is \code{1}.
+#'   \item \code{max_itr} Maximum number of internal iterations. Default is
+#'   \code{100}.
+#'   \item \code{history_size} History size. Default is \code{30}.
+#'   \item \code{tolerance_grad} Termination tolerance for gradient. Default is
+#'   \code{1e-7}.
+#'   \item \code{tolerance_change} Termination tolerance for log-likelihood.
+#'   Default is \code{1e-9}.
 #' }
-#' If no improvement is made in the first \code{patience} iterations, the
-#' learning rate is increased by a factor of \code{10}.
 #'
 #' @return A list with the following components:
 #' \itemize{
 #'   \item \code{x}: The input argument \code{x}.
 #'   \item \code{x0}: The input argument \code{x0}.
 #'   \item \code{h}: The input argument \code{h}.
+#'   \item \code{NX}: The normal-transformed pseudo-observations.
 #'   \item \code{eta}: Matrix of estimated coefficients in the unconstrained
 #'   space.
 #'   \item \code{rho}: Matrix of estimated pairwise correlation coefficients.
-#'   \item \code{convergence}: Convergence codes for each coefficient.
-#'   \code{0} indicates successful completion. \code{1} indicates that
-#'   the iteration limit had been reached. \code{2} indicates that an error
-#'   occurred during optimization.
-#'   \item \code{loss}: Loss history for each coefficient.
-#'   \item \code{hist}: Coefficient values at each step of optimization.
 #' }
 #'
 #' @export
 fit_dynamic_gaussian <- function(FX,
                                  FXm = NULL,
                                  x,
-                                 x0 = NULL,
-                                 x0_ix = NULL,
+                                 x0,
                                  h,
                                  control = list(),
                                  cores = 1L) {
     # Basic checks
-    assertthat::assert_that(
+    assert_that(
         is.vector(x, mode = "numeric"),
         is.numeric(FX) && is.matrix(FX),
         is.null(FXm) || (is.numeric(FXm) && is.matrix(FXm)),
         dim(FX)[1] == length(x),
+        is.null(FXm) || all(dim(FX) == dim(FXm)),
         is.numeric(h) && h > 0 && h < 1,
         is.numeric(cores) && cores >= 1,
-        is.list(control)
+        is.list(control),
+        !anyDuplicated(x) && !is.unsorted(x),
+        is.numeric(x0)
     )
     cores <- as.integer(cores)
 
-    if (!is.null(FXm)) {
-        # Data is count-valued, jitter to produce continuous data
-        V <- matrix(stats::runif(prod(dim(FX))), ncol = ncol(FX))
-        FX <- FXm + V * (FX - FXm)
-    }
-
     # Default control parameters
     defaults <- list(
+        max_epoch = 1L,
         max_itr = 100L,
-        lr = 1e-5,
-        reltol = 1e-5,
-        patience = 4L,
-        momentum = 0.9,
-        max_grad = 1e3
+        history_size = 30L,
+        tolerance_grad = 1e-7,
+        tolerance_change = 1e-9
     )
     control <- utils::modifyList(defaults, control)
-    assertthat::assert_that(all(names(control) %in% names(defaults)))
+    assert_that(all(names(control) %in% names(defaults)))
     control$max_itr <- as.integer(control$max_itr)
     control$patience <- as.integer(control$patience)
 
     # Verify control parameters
-    assertthat::assert_that(
+    assert_that(
         all(sapply(control, is.numeric)),
+        control$max_epoch >= 1L,
         control$max_itr >= 1L,
-        control$lr > 0,
-        control$reltol > 0,
-        control$patience >= 1L,
-        control$momentum >= 0 && control$momentum < 1,
-        control$max_grad > 0
+        control$history_size >= 1L,
+        control$tolerance_grad > 0,
+        control$tolerance_change > 0
     )
 
-    # Sort covariate values and scale to [0, 1]
-    ord <- order(x)
-    x <- x[ord]
-    FX <- FX[ord, ]
+    # If data is count-valued, jitter to produce continuous data
+    if (!is.null(FXm)) {
+        FX <- .jitter(FX, FXm)
+    }
+
+    # Scale times to [0, 1]
     min_x <- x[1]
     dx <- x[length(x)] - min_x
     x <- (x - min_x) / dx
-    if (!is.null(x0)) {
-        x0 <- (x0 - min_x) / dx
-    }
+    x0 <- (x0 - min_x) / dx
 
     # Convert to standard normal margins
     NX <- stats::qnorm(FX)
@@ -208,69 +107,36 @@ fit_dynamic_gaussian <- function(FX,
     on.exit({ future::plan(future::sequential); parallel::stopCluster(cl) },
             add = TRUE)
 
-    if (is.null(x0)) {
-        # Time points to perform inference at are time points at which the time
-        # series was sampled. The only difference is that AIC will be computed.
-        vec <- x0_ix
-        optim <- function(t0) {
-            py_load("dynamic_gaussian")$fit_gaussian(
-                par0 = .init_par(x[t0], x, NX, h),
-                x = x,
-                NX = NX,
-                h = h,
-                control = control,
-                i = t0 - 1     # change to 0-indexing for python
-            )
-        }
-    } else {
-        # Time points to perform inference at are not necessarily time points
-        # at which the time series was sampled. AIC will not be computed.
-        vec <- x0
-        optim <- function(t0) {
-            py_load("dynamic_gaussian")$fit_gaussian(
-                par0 = .init_par(t0, x, NX, h),
-                x = x,
-                NX = NX,
-                h = h,
-                control = control,
-                x0 = t0
-            )
-        }
-    }
-
     # Parallelized with progress bar
     progressr::with_progress({
-        pbar <- progressr::progressor(along = vec)
-        res <- future.apply::future_lapply(
-            X = vec,
-            FUN = function(i) {
-                y <- optim(i)
+        pbar <- progressr::progressor(along = x0)
+        eta_est <- future.apply::future_lapply(
+            X = x0,
+            FUN = function(t0) {
+                y <- py_load("dynamic_gaussian")$fit_gaussian(
+                    par0 = .init_par(t0, x, NX, h),
+                    x = x,
+                    NX = NX,
+                    h = h,
+                    control = control,
+                    x0 = t0
+                )
                 pbar()
                 return(y)
             },
             future.seed = TRUE,
-            future.globals = c("t0", "x", "NX", "h", "control", "pbar")
+            future.globals = c("x", "NX", "h", "control", "pbar")
         )
     })
 
-    output <- list(
-        eta_vals = lapply(res, '[[', "par"),
-        convergence = sapply(res, '[[', "convergence"),
-        loss = lapply(res, '[[', "loss_hist"),
-        hist = lapply(res, '[[', "eta_hist")
-    )
-    if ("aic" %in% names(res[[1]])) {
-        output <- c(output, list(aic = sapply(res, '[[', "aic")))
-    }
-
     # Estimated eta matrix
-    Hhat <- do.call(rbind, output[["eta_vals"]])
+    Hhat <- do.call(rbind, eta_est)
     # Estimated correlation matrix
     Rhat <- t(apply(Hhat, 1, function(v) {
         copula::P2p(vec2cor(v))
     }))
 
-    # Needed to ensure Rhat is shaped the same for any dimension
+    # Needed to ensure consistent shape of Rhat across all dimensions
     d <- dim(FX)[2]
     if (d == 2) {
         Rhat <- t(Rhat)
@@ -283,55 +149,190 @@ fit_dynamic_gaussian <- function(FX,
     colnames(Hhat) <- paste0("eta", ix_lab)
     colnames(Rhat) <- paste0("rho", ix_lab)
 
-    if ("hist" %in% names(output) && is.matrix(output$hist)) {
-        labs <- paste0("eta", ix_lab)
-        output$hist <- t(lapply(output$hist, function(x) {
-            rownames(x) <- labs
-            colnames(x) <- seq_len(dim(x)[2])
-            return(x)
-        }))
-    }
+    # Rescale times back to original scale
+    x <- x * dx + min_x
+    x0 <- x0 * dx + min_x
 
-    output <- c(
-        output[setdiff(names(output), "eta_vals")],
-        list(x = x * dx + min_x,
-             x0 = x0 * dx + min_x,
-             h = h,
-             eta = data.frame(Hhat),
-             rho = data.frame(Rhat))
-    )
-    return(output)
+    return(list(
+        NX = NX,
+        x = x,
+        x0 = x0,
+        h = h,
+        eta = data.frame(Hhat),
+        rho = data.frame(Rhat)
+    ))
 }
 
 ###############################################################################
 
-#' Initial parameter guess
+#' Bandwidth selection for a dynamic Gaussian copula model
 #'
-#' @param x0 Time point to center around.
-#' @param x Vector of time points.
-#' @param NX Matrix of normal-transformed pseudo-observations.
-#' @param h Bandwidth.
+#' @description Select the optimal bandwidth for fitting a time-varying Gaussian
+#' copula.
 #'
-#' @returns Parameter vector
-.init_par <- function(x0, x, NX, h) {
-    # Use nearby points to estimate initial correlation matrix
-    dx <- abs(x0 - x)
-    # Ensure that at least d + 1 points are used to avoid a singular
-    # correlation matrix
-    d <- dim(NX)[2]
-    thr <- max((d + 1) / length(x), h)
-    NX_loc <- NX[which(abs(dx) <= thr), ]
-    cor_loc <- stats::cor(NX_loc, method = "pearson")
+#' @param FX Matrix of pseudo-observations at time points.
+#' @param FXm Matrix of left limits of pseudo-observations at time points. If
+#' \code{NULL}, data is assumed to be continuous. Otherwise, data is assumed
+#' to be count-valued.
+#' @param x Vector of time points corresponding to \code{FX} and \code{FXm}.
+#' Must be sorted and have no duplicates.
+#' @param bandwidths Vector of kernel bandwidths to test.
+#' @param control A \code{list} of control parameters for optimization.
+#' @param cores Number of cores to use for parallel optimization. Default is
+#' \code{1}.
+#' @param return_all Whether all models should be returned, or just the best.
+#' Default is \code{FALSE}.
+#'
+#' @details See \link[DynCopula]{fit_dynamic_gaussian} for details.
 
-    # If computing Cholesky decomposition would fail (cor_loc is probably
-    # not numerically positive definite), use identity matrix instead
-    if (inherits(try(chol(cor_loc), silent = TRUE), "try-error")) {
-        cor_loc <- diag(d)
+#' @return A list with the following components:
+#' \itemize{
+#'   \item \code{x}: The input argument \code{x}.
+#'   \item \code{x0}: The time points at which coefficients were estimated.
+#'   \item \code{h}: The optimal bandwidth selected.
+#'   \item \code{eta}: Matrix of coefficients in the unconstrained space
+#'   estimated using optimal bandwidth. If \code{return_all = TRUE}, this will
+#'   be a list of matrices, one for each bandwidth.
+#'   \item \code{rho}: Matrix of pairwise correlation coefficients estimated
+#'   using optimal bandwidth. If \code{return_all = TRUE}, this will
+#'   be a list of matrices, one for each bandwidth.
+#'   \item \code{bandwidths}: The input argument \code{bandwidths}.
+#'   \item \code{aic}: Vector of AIC values at each bandwidth.
+#' }
+#'
+#' @export
+bandwidth_select <- function(FX,
+                             FXm = NULL,
+                             x,
+                             bandwidths,
+                             control = list(),
+                             cores = 1L,
+                             return_all = FALSE) {
+    assert_that(
+        is.vector(x, mode = "numeric"),
+        is.numeric(FX) && is.matrix(FX),
+        is.null(FXm) || (is.numeric(FXm) && is.matrix(FXm)),
+        dim(FX)[1] == length(x),
+        is.null(FXm) || all(dim(FX) == dim(FXm)),
+        is.numeric(bandwidths),
+        !anyDuplicated(x),
+        is.logical(return_all)
+    )
+
+    # If data, is count-valued, jitter to produce continuous data
+    if (!is.null(FXm)) {
+        FX <- .jitter(FX, FXm)
     }
 
-    # Convert to vector
-    par0 <- cor2vec(cor_loc)
-    return(par0)
+    if (return_all) {
+        res_list <- list()
+        for (i in seq_along(bandwidths)) {
+            message("Testing bandwidth = ", bandwidths[i])
+            res <- fit_dynamic_gaussian(
+                FX = FX,
+                x = x,
+                x0 = x,
+                h = bandwidths[i],
+                control = control,
+                cores = cores
+            )
+            aic[i] <- model_aic(res, cores)
+            res_list[[i]] <- res
+        }
+        aic <- sapply(res_list, '[[', "aic")
+        return(list(
+            x = x,
+            x0 = x,
+            h = bandwidths[which.min(aic)],
+            eta = lapply(res_list, '[[', "eta"),
+            rho = lapply(res_list, '[[', "rho"),
+            bandwidths = bandwidths,
+            aic = aic
+        ))
+    } else {
+        # Select model with lowest AIC
+        aic <- numeric(length = length(bandwidths))
+        best_aic <- Inf
+        best_res <- NULL
+        for (i in seq_along(bandwidths)) {
+            message("Testing bandwidth = ", bandwidths[i])
+            res <- fit_dynamic_gaussian(
+                FX = FX,
+                x = x,
+                x0 = x,
+                h = bandwidths[i],
+                control = control,
+                cores = cores
+            )
+            aic[i] <- model_aic(res, cores)
+
+            if (aic[i] <= best_aic) {
+                best_aic <- aic[i]
+                best_res <- res
+            }
+        }
+        best_res$aic <- aic
+        best_res$bandwidths <- bandwidths
+        return(best_res)
+    }
+}
+
+###############################################################################
+
+#' Model AIC
+#'
+#' @description Compute the model AIC. Requires that coefficients were computed
+#' at all time points.
+#'
+#' @param res Output of \link[DynCopula]{fit_dynamic_gaussian}.
+#' @param cores Number of cores to use. Default is \code{1}.
+#'
+#' @details Correlation coefficients must have been estimated at all time
+#' points. That is, \link[DynCopula]{fit_dynamic_gaussian} must have been run
+#' with \code{x0 = x}.
+#'
+#' @returns The AIC of the model.
+#'
+#' @export
+model_aic <- function(res,
+                      cores = 1L) {
+    assert_that(
+        is.list(res) && all(c("x", "x0", "h", "eta", "NX") %in% names(res)),
+        all(res$x == res$x0),
+        cores >= 1L
+    )
+    cores <- as.integer(cores)
+
+    eta <- as.matrix(res$eta)
+    h <- res$h
+    x <- res$x
+    NX <- res$NX
+
+    cl <- parallel::makeCluster(cores)
+    future::plan(future::cluster, workers = cl)
+    on.exit({ future::plan(future::sequential); parallel::stopCluster(cl) },
+            add = TRUE)
+
+    progressr::with_progress({
+        pbar <- progressr::progressor(along = x)
+        aic <- future.apply::future_lapply(
+            X = seq_along(x),
+            FUN = function(i) {
+                y <- py_load("dynamic_gaussian")$model_aic(
+                    eta_i = eta[i, ],
+                    x = x,
+                    NX = NX,
+                    h = h,
+                    i = i - 1
+                )
+                pbar()
+                return(y)
+            },
+            future.seed = TRUE,
+            future.globals = c("eta", "x", "NX", "h", "pbar")
+        )
+    })
+    return(sum(unlist(aic)))
 }
 
 ###############################################################################

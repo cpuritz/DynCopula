@@ -9,13 +9,14 @@ fit_margins(sce, family = c("NBI", "ZINBI"), mu_formula, sigma_formula)
 \arguments{
 \item{sce}{A \code{SingleCellExperiment}.}
 
-\item{family}{Family to use. Either \code{"NBI"} (negative binomial) or
-\code{"ZINBI"} (zero-inflated negative binomial).}
+\item{family}{A character vector specifying families to use. Options are
+\code{"NBI"} (negative binomial) and \code{"ZINBI"}
+(zero-inflated negative binomial).}
 
-\item{mu_formula}{A vector of strings specifying formulas for the mean
+\item{mu_formula}{A character vector specifying formulas for the mean
 parameter.}
 
-\item{sigma_formula}{A vector of strings specifying formulas for the
+\item{sigma_formula}{A character vector specifying formulas for the
 dispersion parameter.}
 }
 \value{
@@ -30,7 +31,7 @@ all combinations.
 }
 \details{
 Formulas should be written as a function of the name of the
-pseudotime column (what was passed as the argument \code{tcol} to
+pseudotime column (what was passed as the argument \code{time_col} to
 \link[DynCopula]{setup}). Only the righthand side of the formula should be
 passed. For example (if the pseudotime column is named \code{"pseudotime"}):
 \itemize{

@@ -2,7 +2,7 @@
 % Please edit documentation in R/sample.R
 \name{sample_cells}
 \alias{sample_cells}
-\title{Sample cells at specified pseudotimes}
+\title{Sample cells}
 \usage{
 sample_cells(sce, times)
 }

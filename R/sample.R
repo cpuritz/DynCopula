@@ -1,6 +1,6 @@
 ###############################################################################
 
-#' Sample cells at specified pseudotimes
+#' Sample cells
 #'
 #' @description Sample cells at specified pseudotimes.
 #'
@@ -12,9 +12,9 @@
 #' @export
 sample_cells <- function(sce,
                          times) {
-    assertthat::assert_that(
+    assert_that(
         methods::is(sce, "SingleCellExperiment"),
-        all("dyn_corr_info", "margins", "dyn_corr" %in% names(metadata(sce))),
+        all(c("dyn_corr_info", "margins", "dyn_corr") %in% names(metadata(sce))),
         is.numeric(times)
     )
 
@@ -23,7 +23,7 @@ sample_cells <- function(sce,
 
     counts <- SummarizedExperiment::assay(sce, info$assay)
     counts <- Matrix::t(counts[info$features, ])
-    pseudotimes <- SummarizedExperiment::colData(sce)[[info$tcol]]
+    pseudotimes <- SummarizedExperiment::colData(sce)[[info$time_col]]
 
     # Out of the time points at which correlation coefficients were estimated,
     # use the closest one to the specified time
@@ -58,12 +58,12 @@ sample_cells <- function(sce,
 
     # Convert to specified margins
     message("Converting margins")
-    new_times <- stats::setNames(data.frame(times), info$tcol)
+    new_times <- stats::setNames(data.frame(times), info$time_col)
     progressr::with_progress({
         pbar <- progressr::progressor(along = seq_len(ngenes))
         counts_sim <- lapply(seq_len(ngenes), function(i) {
             mdat <- data.frame(counts[, i], pseudotimes)
-            names(mdat) <- c("x", info$tcol)
+            names(mdat) <- c("x", info$time_col)
             mfun <- metadata(sce)$margins[[i]]
             par_pred <- gamlss::predictAll(
                 object = mfun,
@@ -71,10 +71,8 @@ sample_cells <- function(sce,
                 type = "response",
                 data = mdat
             )
-            qfun <- methods::getFunction(
-                name = paste0("q", mfun$family[1]),
-                where = getNamespace("gamlss.dist")
-            )
+            qfun <- paste0("q", mfun$family[1])
+            qfun <- getExportedValue("gamlss.dist", qfun)
             V <- do.call(qfun, c(list(p = U[, i]), par_pred))
             pbar()
             return(V)
