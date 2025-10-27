@@ -20,8 +20,8 @@ pseudotimes.}
 }
 \value{
 The same \code{SingleCellExperiment} as was passed as input, but
-modified to include named metadata entries \code{metacell_sce} and
-\code{metacell_assignment}.
+with the metadata entry \code{dyn_corr} updated to include the entries
+\code{metacell_sce} and \code{metacell_assignment}.
 }
 \description{
 Generate metacells by binning cells based on their pseudotimes
@@ -31,7 +31,6 @@ and aggregating counts within bins.
 Cells are first binned by their pseudotimes. \code{N} sets the
 target number of cells per bin, but the number of cells per bin may be
 smaller or larger. \code{max_width} sets an upper bound on the width of each
-bin. This bound may be violated if there are a large number of ties in
-pseudotimes. Each bin forms a single metacell. The raw transcript counts for
-cells in a single bin are summed to form the metacell's counts.
+bin. Each bin forms a single metacell. The raw transcript counts for cells in
+a single bin are summed to form the metacell's counts.
 }

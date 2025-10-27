@@ -69,19 +69,3 @@ vec2cor <- function(v) {
 }
 
 ###############################################################################
-
-#' Jittered pseudo-observations
-#'
-#' @description Compute jittered pseudo-observations.
-#'
-#' @param FX Matrix of pseudo-observations at time points.
-#' @param FXm Matrix of left limits of pseudo-observations at time points.
-#'
-#' @returns A matrix of the same size as \code{FX}.
-.jitter <- function(FX, FXm) {
-    V <- matrix(stats::runif(prod(dim(FX))), ncol = ncol(FX))
-    FXj <- FXm + V * (FX - FXm)
-    return(FXj)
-}
-
-###############################################################################

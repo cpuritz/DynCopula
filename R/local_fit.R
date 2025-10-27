@@ -4,11 +4,8 @@
 #'
 #' @description Fit a time-varying Gaussian copula to a time series.
 #'
-#' @param FX Matrix of pseudo-observations at time points.
-#' @param FXm Matrix of left limits of pseudo-observations at time points. If
-#' \code{NULL}, data is assumed to be continuous. Otherwise, data is assumed
-#' to be count-valued.
-#' @param x Vector of time points corresponding to \code{FX} and \code{FXm}.
+#' @param NX Matrix of normal-transformed pseudo-observations at time points.
+#' @param x Vector of time points corresponding to \code{NX}.
 #' Must be sorted and have no duplicates.
 #' @param x0 Time points to estimate copula parameters at.
 #' @param h Kernel bandwidth. Must satisfy \code{0 < h < 1}.
@@ -35,15 +32,14 @@
 #'   \item \code{x}: The input argument \code{x}.
 #'   \item \code{x0}: The input argument \code{x0}.
 #'   \item \code{h}: The input argument \code{h}.
-#'   \item \code{NX}: The normal-transformed pseudo-observations.
+#'   \item \code{NX}: The input argument \code{NX}.
 #'   \item \code{eta}: Matrix of estimated coefficients in the unconstrained
 #'   space.
 #'   \item \code{rho}: Matrix of estimated pairwise correlation coefficients.
 #' }
 #'
 #' @export
-fit_dynamic_gaussian <- function(FX,
-                                 FXm = NULL,
+fit_dynamic_gaussian <- function(NX,
                                  x,
                                  x0,
                                  h,
@@ -52,10 +48,8 @@ fit_dynamic_gaussian <- function(FX,
     # Basic checks
     assert_that(
         is.vector(x, mode = "numeric"),
-        is.numeric(FX) && is.matrix(FX),
-        is.null(FXm) || (is.numeric(FXm) && is.matrix(FXm)),
-        dim(FX)[1] == length(x),
-        is.null(FXm) || all(dim(FX) == dim(FXm)),
+        is.numeric(NX) && is.matrix(NX),
+        dim(NX)[1] == length(x),
         is.numeric(h) && h > 0 && h < 1,
         is.numeric(cores) && cores >= 1,
         is.list(control),
@@ -87,19 +81,11 @@ fit_dynamic_gaussian <- function(FX,
         control$tolerance_change > 0
     )
 
-    # If data is count-valued, jitter to produce continuous data
-    if (!is.null(FXm)) {
-        FX <- .jitter(FX, FXm)
-    }
-
     # Scale times to [0, 1]
     min_x <- x[1]
     dx <- x[length(x)] - min_x
     x <- (x - min_x) / dx
     x0 <- (x0 - min_x) / dx
-
-    # Convert to standard normal margins
-    NX <- stats::qnorm(FX)
 
     # Set up futures plan
     cl <- parallel::makeCluster(cores)
@@ -137,7 +123,7 @@ fit_dynamic_gaussian <- function(FX,
     }))
 
     # Needed to ensure consistent shape of Rhat across all dimensions
-    d <- dim(FX)[2]
+    d <- dim(NX)[2]
     if (d == 2) {
         Rhat <- t(Rhat)
     }
@@ -154,12 +140,12 @@ fit_dynamic_gaussian <- function(FX,
     x0 <- x0 * dx + min_x
 
     return(list(
-        NX = NX,
         x = x,
         x0 = x0,
         h = h,
-        eta = data.frame(Hhat),
-        rho = data.frame(Rhat)
+        NX = NX,
+        eta = Hhat,
+        rho = Rhat
     ))
 }
 
@@ -170,11 +156,8 @@ fit_dynamic_gaussian <- function(FX,
 #' @description Select the optimal bandwidth for fitting a time-varying Gaussian
 #' copula.
 #'
-#' @param FX Matrix of pseudo-observations at time points.
-#' @param FXm Matrix of left limits of pseudo-observations at time points. If
-#' \code{NULL}, data is assumed to be continuous. Otherwise, data is assumed
-#' to be count-valued.
-#' @param x Vector of time points corresponding to \code{FX} and \code{FXm}.
+#' @param NX Matrix of normal-transformed pseudo-observations at time points.
+#' @param x Vector of time points corresponding to \code{NX}.
 #' Must be sorted and have no duplicates.
 #' @param bandwidths Vector of kernel bandwidths to test.
 #' @param control A \code{list} of control parameters for optimization.
@@ -190,6 +173,7 @@ fit_dynamic_gaussian <- function(FX,
 #'   \item \code{x}: The input argument \code{x}.
 #'   \item \code{x0}: The time points at which coefficients were estimated.
 #'   \item \code{h}: The optimal bandwidth selected.
+#'   \item \code{NX}: The input argument \code{NX}.
 #'   \item \code{eta}: Matrix of coefficients in the unconstrained space
 #'   estimated using optimal bandwidth. If \code{return_all = TRUE}, this will
 #'   be a list of matrices, one for each bandwidth.
@@ -201,8 +185,7 @@ fit_dynamic_gaussian <- function(FX,
 #' }
 #'
 #' @export
-bandwidth_select <- function(FX,
-                             FXm = NULL,
+bandwidth_select <- function(NX,
                              x,
                              bandwidths,
                              control = list(),
@@ -210,26 +193,19 @@ bandwidth_select <- function(FX,
                              return_all = FALSE) {
     assert_that(
         is.vector(x, mode = "numeric"),
-        is.numeric(FX) && is.matrix(FX),
-        is.null(FXm) || (is.numeric(FXm) && is.matrix(FXm)),
-        dim(FX)[1] == length(x),
-        is.null(FXm) || all(dim(FX) == dim(FXm)),
+        is.numeric(NX) && is.matrix(NX),
+        dim(NX)[1] == length(x),
         is.numeric(bandwidths),
         !anyDuplicated(x),
         is.logical(return_all)
     )
-
-    # If data, is count-valued, jitter to produce continuous data
-    if (!is.null(FXm)) {
-        FX <- .jitter(FX, FXm)
-    }
 
     if (return_all) {
         res_list <- list()
         for (i in seq_along(bandwidths)) {
             message("Testing bandwidth = ", bandwidths[i])
             res <- fit_dynamic_gaussian(
-                FX = FX,
+                NX = NX,
                 x = x,
                 x0 = x,
                 h = bandwidths[i],
@@ -244,6 +220,7 @@ bandwidth_select <- function(FX,
             x = x,
             x0 = x,
             h = bandwidths[which.min(aic)],
+            NX = NX,
             eta = lapply(res_list, '[[', "eta"),
             rho = lapply(res_list, '[[', "rho"),
             bandwidths = bandwidths,
@@ -257,7 +234,7 @@ bandwidth_select <- function(FX,
         for (i in seq_along(bandwidths)) {
             message("Testing bandwidth = ", bandwidths[i])
             res <- fit_dynamic_gaussian(
-                FX = FX,
+                NX = NX,
                 x = x,
                 x0 = x,
                 h = bandwidths[i],
@@ -275,64 +252,6 @@ bandwidth_select <- function(FX,
         best_res$bandwidths <- bandwidths
         return(best_res)
     }
-}
-
-###############################################################################
-
-#' Model AIC
-#'
-#' @description Compute the model AIC. Requires that coefficients were computed
-#' at all time points.
-#'
-#' @param res Output of \link[DynCopula]{fit_dynamic_gaussian}.
-#' @param cores Number of cores to use. Default is \code{1}.
-#'
-#' @details Correlation coefficients must have been estimated at all time
-#' points. That is, \link[DynCopula]{fit_dynamic_gaussian} must have been run
-#' with \code{x0 = x}.
-#'
-#' @returns The AIC of the model.
-#'
-#' @export
-model_aic <- function(res,
-                      cores = 1L) {
-    assert_that(
-        is.list(res) && all(c("x", "x0", "h", "eta", "NX") %in% names(res)),
-        all(res$x == res$x0),
-        cores >= 1L
-    )
-    cores <- as.integer(cores)
-
-    eta <- as.matrix(res$eta)
-    h <- res$h
-    x <- res$x
-    NX <- res$NX
-
-    cl <- parallel::makeCluster(cores)
-    future::plan(future::cluster, workers = cl)
-    on.exit({ future::plan(future::sequential); parallel::stopCluster(cl) },
-            add = TRUE)
-
-    progressr::with_progress({
-        pbar <- progressr::progressor(along = x)
-        aic <- future.apply::future_lapply(
-            X = seq_along(x),
-            FUN = function(i) {
-                y <- py_load("dynamic_gaussian")$model_aic(
-                    eta_i = eta[i, ],
-                    x = x,
-                    NX = NX,
-                    h = h,
-                    i = i - 1
-                )
-                pbar()
-                return(y)
-            },
-            future.seed = TRUE,
-            future.globals = c("eta", "x", "NX", "h", "pbar")
-        )
-    })
-    return(sum(unlist(aic)))
 }
 
 ###############################################################################

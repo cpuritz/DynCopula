@@ -21,8 +21,8 @@ is \code{1L}.}
 }
 \value{
 The same \code{SingleCellExperiment} as was passed as input, but
-modified to include a named metadata entry \code{dyn_corr_info}. This entry
-is a list recording \code{time_col}, \code{features}, \code{assay}, and
+modified to include a named metadata entry \code{dyn_corr}. This entry is a
+list recording \code{time_col}, \code{features}, \code{assay}, and
 \code{cores}.
 }
 \description{

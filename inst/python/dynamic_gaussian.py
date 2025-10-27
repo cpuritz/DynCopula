@@ -3,11 +3,6 @@ import numpy as np
 from torch.func import hessian
 from distributions import _local_loglik, _log_mvn_density
 
-from concurrent.futures import ProcessPoolExecutor
-import os
-import multiprocessing as mp
-import math
-
 ###############################################################################
 
 def fit_gaussian(par0, x, NX, h, control, x0):
@@ -48,9 +43,9 @@ def fit_gaussian(par0, x, NX, h, control, x0):
 
 ###############################################################################
 
-def model_aic(eta_i, x, NX, h, i):
+def model_aic(eta_i, x, NX, h: float, i: int) -> float:
 	eta_i = torch.tensor(
-	    eta_i,
+	    np.atleast_1d(eta_i),
 		dtype = torch.float64,
 		requires_grad = True
 	)

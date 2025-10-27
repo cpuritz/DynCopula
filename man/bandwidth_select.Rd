@@ -5,8 +5,7 @@
 \title{Bandwidth selection for a dynamic Gaussian copula model}
 \usage{
 bandwidth_select(
-  FX,
-  FXm = NULL,
+  NX,
   x,
   bandwidths,
   control = list(),
@@ -15,13 +14,9 @@ bandwidth_select(
 )
 }
 \arguments{
-\item{FX}{Matrix of pseudo-observations at time points.}
+\item{NX}{Matrix of normal-transformed pseudo-observations at time points.}
 
-\item{FXm}{Matrix of left limits of pseudo-observations at time points. If
-\code{NULL}, data is assumed to be continuous. Otherwise, data is assumed
-to be count-valued.}
-
-\item{x}{Vector of time points corresponding to \code{FX} and \code{FXm}.
+\item{x}{Vector of time points corresponding to \code{NX}.
 Must be sorted and have no duplicates.}
 
 \item{bandwidths}{Vector of kernel bandwidths to test.}
@@ -40,6 +35,7 @@ A list with the following components:
   \item \code{x}: The input argument \code{x}.
   \item \code{x0}: The time points at which coefficients were estimated.
   \item \code{h}: The optimal bandwidth selected.
+  \item \code{NX}: The input argument \code{NX}.
   \item \code{eta}: Matrix of coefficients in the unconstrained space
   estimated using optimal bandwidth. If \code{return_all = TRUE}, this will
   be a list of matrices, one for each bandwidth.

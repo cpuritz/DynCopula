@@ -4,16 +4,12 @@
 \alias{fit_dynamic_gaussian}
 \title{Fit a dynamic Gaussian copula model}
 \usage{
-fit_dynamic_gaussian(FX, FXm = NULL, x, x0, h, control = list(), cores = 1L)
+fit_dynamic_gaussian(NX, x, x0, h, control = list(), cores = 1L)
 }
 \arguments{
-\item{FX}{Matrix of pseudo-observations at time points.}
+\item{NX}{Matrix of normal-transformed pseudo-observations at time points.}
 
-\item{FXm}{Matrix of left limits of pseudo-observations at time points. If
-\code{NULL}, data is assumed to be continuous. Otherwise, data is assumed
-to be count-valued.}
-
-\item{x}{Vector of time points corresponding to \code{FX} and \code{FXm}.
+\item{x}{Vector of time points corresponding to \code{NX}.
 Must be sorted and have no duplicates.}
 
 \item{x0}{Time points to estimate copula parameters at.}
@@ -31,7 +27,7 @@ A list with the following components:
   \item \code{x}: The input argument \code{x}.
   \item \code{x0}: The input argument \code{x0}.
   \item \code{h}: The input argument \code{h}.
-  \item \code{NX}: The normal-transformed pseudo-observations.
+  \item \code{NX}: The input argument \code{NX}.
   \item \code{eta}: Matrix of estimated coefficients in the unconstrained
   space.
   \item \code{rho}: Matrix of estimated pairwise correlation coefficients.

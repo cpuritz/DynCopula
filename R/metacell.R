@@ -99,15 +99,14 @@
 #' \code{"mean"}.
 #'
 #' @returns The same \code{SingleCellExperiment} as was passed as input, but
-#' modified to include named metadata entries \code{metacell_sce} and
-#' \code{metacell_assignment}.
+#' with the metadata entry \code{dyn_corr} updated to include the entries
+#' \code{metacell_sce} and \code{metacell_assignment}.
 #'
 #' @details Cells are first binned by their pseudotimes. \code{N} sets the
 #' target number of cells per bin, but the number of cells per bin may be
 #' smaller or larger. \code{max_width} sets an upper bound on the width of each
-#' bin. This bound may be violated if there are a large number of ties in
-#' pseudotimes. Each bin forms a single metacell. The raw transcript counts for
-#' cells in a single bin are summed to form the metacell's counts.
+#' bin. Each bin forms a single metacell. The raw transcript counts for cells in
+#' a single bin are summed to form the metacell's counts.
 #'
 #' @export
 generate_metacells <- function(sce,
@@ -116,16 +115,15 @@ generate_metacells <- function(sce,
                                agg = c("mean", "min", "max")) {
     assert_that(
         methods::is(sce, "SingleCellExperiment"),
-        "dyn_corr_info" %in% names(metadata(sce)),
+        "dyn_corr" %in% names(metadata(sce)),
         is.numeric(N) && N > 0,
         is.numeric(max_width) && 0 < max_width && max_width <= 1
     )
     N <- as.integer(N)
-    info <- metadata(sce)$dyn_corr_info
     agg <- getExportedValue("base", match.arg(agg))
 
     # Get cut points for binning
-    times <- sce[[info$time_col]]
+    times <- sce[[metadata(sce)$dyn_corr$time_col]]
     bins <- .bin_vector(times, N, max_width)
 
     # Bin pseudotimes
@@ -155,20 +153,15 @@ generate_metacells <- function(sce,
     )
     colnames(mc_sce) <- paste("metacell", uint, sep = '_')
     mc_sce$pseudotime <- mc_pseudotimes
-    metadata(mc_sce)$dyn_corr_info <- metadata(sce)$dyn_corr_info
+    meta_keep <- c("time_col", "features", "assay", "cores")
+    for (x in meta_keep) {
+        metadata(mc_sce)$dyn_corr[[x]] <- metadata(sce)$dyn_corr[[x]]
+    }
 
-    # Fit margins to metacells
-    mc_sce <- fit_margins(
-        mc_sce,
-        family = metadata(mc_sce)$dyn_corr_info$family,
-        mu_formula = metadata(mc_sce)$dyn_corr_info$mu_formula,
-        sigma_formula = metadata(mc_sce)$dyn_corr_info$sigma_formula
-    )
-
-    # Save metacells
-    metadata(sce)$metacell_sce <- mc_sce
+    # Save metacell data
+    metadata(sce)$dyn_corr$metacell_sce <- mc_sce
     mc_assignment <- stats::setNames(intervals, colnames(sce))
-    metadata(sce)$metacell_assignment <- mc_assignment
+    metadata(sce)$dyn_corr$metacell_assignment <- mc_assignment
 
     return(sce)
 }

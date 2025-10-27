@@ -21,15 +21,22 @@ dispersion parameter.}
 }
 \value{
 The same \code{SingleCellExperiment} as was passed as input, but
-modified to include a named metadata entry \code{margins} which is a list
-of marginal models.
+with the metadata entry \code{dyn_corr} updated to include the following
+entries:
+\itemize{
+  \item \code{margins} List of marginal models.
+  \item \code{FX} Pseudo-observations.
+  \item \code{FXm} Left limits of pseudo-observations.
+  \item \code{V} Jittering matrix.
+}
 }
 \description{
-Fit parametric models for each gene. Multiple families and
-formulas can be passed, in which case the best fitting model is chosen across
-all combinations.
+Fit parametric models to transcript counts for each gene.
 }
 \details{
+Multiple families and formulas can be passed, in which case the best
+fitting model is chosen across all combinations using AIC.
+
 Formulas should be written as a function of the name of the
 pseudotime column (what was passed as the argument \code{time_col} to
 \link[DynCopula]{setup}). Only the righthand side of the formula should be
@@ -42,6 +49,4 @@ passed. For example (if the pseudotime column is named \code{"pseudotime"}):
   P-spline with pseudotime.
 }
 For ZINBI models, the zero probability parameter is assumed to be constant.
-
-Model selection is done using AIC.
 }

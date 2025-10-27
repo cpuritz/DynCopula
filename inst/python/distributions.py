@@ -12,7 +12,7 @@ def _local_loglik(
 	h: float
 ) -> torch.Tensor:
 	# Epanechnikov kernel weights
-	u = (x0 - x) / h
+	u = (x - x0) / h
 	wgt = 3 / (4 * h) * torch.clamp(1 - u * u, min = 0)
 	mask = wgt > 0
 

@@ -4,12 +4,13 @@
 \alias{fit_dyn_corr}
 \title{Time-varying gene correlations}
 \usage{
-fit_dyn_corr(sce, t0, h, control = list())
+fit_dyn_corr(sce, t0 = NULL, h, control = list())
 }
 \arguments{
 \item{sce}{A \code{SingleCellExperiment}.}
 
-\item{t0}{A vector of pseudotimes to estimate copula parameters at.}
+\item{t0}{A vector of pseudotimes to estimate copula parameters at. If
+\code{NULL} (the default), parameters are estimated at all pseudotimes.}
 
 \item{h}{Kernel bandwidth. Must satisfy \code{0 < h < 1}.}
 
@@ -17,10 +18,12 @@ fit_dyn_corr(sce, t0, h, control = list())
 }
 \value{
 The same \code{SingleCellExperiment} as was passed as input, but
-modified to include a named metadata entry \code{dyn_corr}. This entry is a
-list with the following components:
+with the metadata entry \code{dyn_corr} updated to include the following
+elements:
 \itemize{
   \item \code{rho}: Matrix of estimated pairwise correlation coefficients.
+  \item \code{eta}: Matrix of estimated coefficients in the unconstrained
+  space.
   \item \code{t0}: The input argument \code{t0}.
   \item \code{h}: The input argument \code{h}.
 }
@@ -29,6 +32,9 @@ list with the following components:
 Estimate a time-varying gene-gene correlation matrix.
 }
 \details{
+This function can only be run after
+\link[DynCopula]{generate_metacells} has been run.
+
 Optimization is performed using L-BFGS. The \code{control} argument
 is a list that supplies control parameters for optimization. The following
 parameters can be supplied:

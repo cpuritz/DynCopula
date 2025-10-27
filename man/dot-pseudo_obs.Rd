@@ -12,8 +12,8 @@
 \value{
 A list containing
 \itemize{
-   \item \code{FX} Pseudo-observations
-   \item \code{FXm} Left limits of pseudo-observations
+   \item \code{FX} Pseudo-observations.
+   \item \code{FXm} Left limits of pseudo-observations.
 }
 }
 \description{

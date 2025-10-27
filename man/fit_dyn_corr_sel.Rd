@@ -4,7 +4,7 @@
 \alias{fit_dyn_corr_sel}
 \title{Time-varying gene correlations}
 \usage{
-fit_dyn_corr_sel(sce, bandwidths, control = list(), return_all = FALSE)
+fit_dyn_corr_sel(sce, bandwidths, control = list())
 }
 \arguments{
 \item{sce}{A \code{SingleCellExperiment}.}
@@ -12,18 +12,14 @@ fit_dyn_corr_sel(sce, bandwidths, control = list(), return_all = FALSE)
 \item{bandwidths}{A vector of kernel bandwidths.}
 
 \item{control}{A \code{list} of control parameters for optimization.}
-
-\item{return_all}{Whether all models should be returned, or just the best.
-Default is \code{FALSE}.}
 }
 \value{
 The same \code{SingleCellExperiment} as was passed as input, but
-modified to include a named metadata entry \code{dyn_corr}. This entry is a
-list with the following components:
+with the metadata entry \code{dyn_corr} updated to include the following
+elements:
 \itemize{
   \item \code{rho}: Matrix of estimated pairwise correlation coefficients.
-  If \code{return_all = TRUE}, this will be a list of matrices, one for
-  each bandwidth.
+  \code{eta}: Matrix of estimated coefficients in the unconstrained space.
   \item \code{t0}: The time points coefficients were estimated at.
   \item \code{aic}: Vector of AIC values.
   \item \code{h}: Optimal kernel bandwidth.
@@ -34,6 +30,9 @@ list with the following components:
 Estimate a time-varying gene-gene correlation matrix.
 }
 \details{
+This function can only be run after
+\link[DynCopula]{generate_metacells} has been run.
+
 The optimal kernel bandwidth is selected via AIC. This requires
 parameter estimation at every pseudotime value for every bandwidth and thus
 may take a while to run.

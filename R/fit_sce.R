@@ -5,11 +5,15 @@
 #' @description Estimate a time-varying gene-gene correlation matrix.
 #'
 #' @param sce A \code{SingleCellExperiment}.
-#' @param t0 A vector of pseudotimes to estimate copula parameters at.
+#' @param t0 A vector of pseudotimes to estimate copula parameters at. If
+#' \code{NULL} (the default), parameters are estimated at all pseudotimes.
 #' @param h Kernel bandwidth. Must satisfy \code{0 < h < 1}.
 #' @param control A \code{list} of control parameters for optimization.
 #'
-#' @details Optimization is performed using L-BFGS. The \code{control} argument
+#' @details This function can only be run after
+#' \link[DynCopula]{generate_metacells} has been run.
+#'
+#' Optimization is performed using L-BFGS. The \code{control} argument
 #' is a list that supplies control parameters for optimization. The following
 #' parameters can be supplied:
 #' \itemize{
@@ -24,59 +28,95 @@
 #' }
 #'
 #' @returns The same \code{SingleCellExperiment} as was passed as input, but
-#' modified to include a named metadata entry \code{dyn_corr}. This entry is a
-#' list with the following components:
+#' with the metadata entry \code{dyn_corr} updated to include the following
+#' elements:
 #' \itemize{
 #'   \item \code{rho}: Matrix of estimated pairwise correlation coefficients.
+#'   \item \code{eta}: Matrix of estimated coefficients in the unconstrained
+#'   space.
 #'   \item \code{t0}: The input argument \code{t0}.
 #'   \item \code{h}: The input argument \code{h}.
 #' }
 #'
 #' @export
 fit_dyn_corr <- function(sce,
-                         t0,
+                         t0 = NULL,
                          h,
                          control = list()) {
     assert_that(
         methods::is(sce, "SingleCellExperiment"),
-        "dyn_corr_info" %in% names(metadata(sce)),
-        "margins" %in% names(metadata(sce)),
-        is.numeric(t0)
+        "dyn_corr" %in% names(metadata(sce)),
+        "metacell_sce" %in% names(metadata(sce)$dyn_corr),
+        is.null(t0) || is.numeric(t0)
     )
 
-    if ("metacell_sce" %in% names(metadata(sce))) {
-        sce_comp <- metadata(sce)$metacell_sce
-    } else {
-        sce_comp <- sce
+    sce_mc <- metadata(sce)$dyn_corr$metacell_sce
+    dyn_corr <- metadata(sce_mc)$dyn_corr
+    assert_that("margins" %in% names(dyn_corr))
+
+    X <- SummarizedExperiment::assay(sce_mc, dyn_corr$assay)
+    X <- Matrix::t(X[dyn_corr$features, ])
+    pseudotimes <- sce_mc[[dyn_corr$time_col]]
+
+    if (is.null(t0)) {
+        t0 <- sort(unique(pseudotimes))
     }
 
-    info <- metadata(sce_comp)$dyn_corr_info
-    X <- SummarizedExperiment::assay(sce_comp, info$assay)
-    X <- Matrix::t(X[info$features, ])
-    pseudotimes <- SummarizedExperiment::colData(sce_comp)[[info$time_col]]
-    pobs <- .pseudo_obs(sce_comp)
+    FX <- dyn_corr$FX
+    FXm <- dyn_corr$FXm
+    V <- dyn_corr$V
+    NX <- stats::qnorm(FXm + (FX - FXm) * V)
 
     message("Estimating correlation coefficients")
     res <- fit_dynamic_gaussian(
-        FX = pobs$FX,
-        FXm = pobs$FXm,
+        NX = NX,
         x = pseudotimes,
         x0 = t0,
         h = h,
         control = control,
-        cores = info$cores
+        cores = dyn_corr$cores
     )
 
+    # Interpolate unconstrained coefficients to original pseudotime values
+    eta <- res$eta
+    t_old <- res$x0
+    t_new <- sce[[dyn_corr$time_col]]
+    nc <- dim(eta)[2]
+    eta_int <- matrix(nrow = length(t_new), ncol = nc, dimnames = dimnames(eta))
+    for (j in nc) {
+        eta_int[, j] <- stats::approx(
+            x = t_old,
+            y = eta[, j],
+            xout = t_new,
+            rule = 2
+        )$y
+    }
+
+    # Interpolated correlation coefficients
+    rho_int <- t(apply(eta_int, 1, function(v) {
+        copula::P2p(vec2cor(v))
+    }))
+    if (nc == 1) {
+        rho_int <- t(rho_int)
+    }
+
     # Map numeric labels to gene names
-    colnames(res$rho) <- sapply(colnames(res$rho), function(x) {
+    gene_names <- sapply(colnames(res$rho), function(x) {
         x2 <- unlist(strsplit(x, split = "rho"))[2]
         ix <- as.numeric(unlist(strsplit(x2, split = '_')))
-        return(paste(info$features[ix], collapse = '_'))
+        return(paste(dyn_corr$features[ix], collapse = '_'))
     })
+    colnames(res$eta) <- colnames(res$rho) <- gene_names
+    colnames(eta_int) <- colnames(rho_int) <- gene_names
 
-    res <- res[c("rho", "x0", "h")]
-    names(res)[names(res) == "x0"] <- "t0"
-    metadata(sce)$dyn_corr <- res
+    metadata(sce)$dyn_corr$x <- res$x
+    metadata(sce)$dyn_corr$x0 <- res$x0
+    metadata(sce)$dyn_corr$h <- res$h
+    metadata(sce)$dyn_corr$eta <- res$eta
+    metadata(sce)$dyn_corr$rho <- res$rho
+    metadata(sce)$dyn_corr$eta_int <- eta_int
+    metadata(sce)$dyn_corr$rho_int <- rho_int
+
     return(sce)
 }
 
@@ -89,22 +129,22 @@ fit_dyn_corr <- function(sce,
 #' @param sce A \code{SingleCellExperiment}.
 #' @param bandwidths A vector of kernel bandwidths.
 #' @param control A \code{list} of control parameters for optimization.
-#' @param return_all Whether all models should be returned, or just the best.
-#' Default is \code{FALSE}.
 #'
-#' @details The optimal kernel bandwidth is selected via AIC. This requires
+#' @details This function can only be run after
+#' \link[DynCopula]{generate_metacells} has been run.
+#'
+#' The optimal kernel bandwidth is selected via AIC. This requires
 #' parameter estimation at every pseudotime value for every bandwidth and thus
 #' may take a while to run.
 #'
 #' See \link[DynCopula]{fit_dyn_corr} for optimization details.
 #'
 #' @returns The same \code{SingleCellExperiment} as was passed as input, but
-#' modified to include a named metadata entry \code{dyn_corr}. This entry is a
-#' list with the following components:
+#' with the metadata entry \code{dyn_corr} updated to include the following
+#' elements:
 #' \itemize{
 #'   \item \code{rho}: Matrix of estimated pairwise correlation coefficients.
-#'   If \code{return_all = TRUE}, this will be a list of matrices, one for
-#'   each bandwidth.
+#'   \code{eta}: Matrix of estimated coefficients in the unconstrained space.
 #'   \item \code{t0}: The time points coefficients were estimated at.
 #'   \item \code{aic}: Vector of AIC values.
 #'   \item \code{h}: Optimal kernel bandwidth.
@@ -114,73 +154,77 @@ fit_dyn_corr <- function(sce,
 #' @export
 fit_dyn_corr_sel <- function(sce,
                              bandwidths,
-                             control = list(),
-                             return_all = FALSE) {
+                             control = list()) {
     assert_that(
         methods::is(sce, "SingleCellExperiment"),
-        "dyn_corr_info" %in% names(metadata(sce)),
-        "margins" %in% names(metadata(sce)),
-        is.numeric(bandwidths),
-        is.logical(return_all)
+        "dyn_corr" %in% names(metadata(sce)),
+        "metacell_sce" %in% names(metadata(sce)$dyn_corr),
+        is.numeric(bandwidths)
     )
 
-    if ("metacell_sce" %in% names(metadata(sce))) {
-        sce_comp <- metadata(sce)$metacell_sce
-    } else {
-        sce_comp <- sce
-    }
+    sce_comp <- metadata(sce)$dyn_corr$metacell_sce
+    dyn_corr <- metadata(sce_comp)$dyn_corr
+    X <- SummarizedExperiment::assay(sce_comp, dyn_corr$assay)
+    X <- Matrix::t(X[dyn_corr$features, ])
+    pseudotimes <- sce_comp[[dyn_corr$time_col]]
 
-    info <- metadata(sce_comp)$dyn_corr_info
-    X <- SummarizedExperiment::assay(sce_comp, info$assay)
-    X <- Matrix::t(X[info$features, ])
-    pseudotimes <- SummarizedExperiment::colData(sce_comp)[[info$time_col]]
-    pobs <- .pseudo_obs(sce_comp)
+    FX <- dyn_corr$FX
+    FXm <- dyn_corr$FXm
+    V <- dyn_corr$V
+    NX <- stats::qnorm(FXm + (FX - FXm) * V)
 
     res <- bandwidth_select(
-        FX = pobs$FX,
-        FXm = pobs$FXm,
+        NX = NX,
         x = pseudotimes,
         bandwidths = bandwidths,
         control = control,
-        cores = info$cores,
-        return_all = return_all
+        cores = dyn_corr$cores,
+        return_all = FALSE
     )
 
-    # Convert column names of coefficient matrices to gene names
-    cnames <- ifelse(return_all, colnames(res$rho[[1]]), colnames(res$rho))
-    cnames <- sapply(cnames, function(x) {
-        x2 <- unlist(strsplit(x, split = "rho"))[2]
-        ix <- as.numeric(unlist(strsplit(x2, split = '_')))
-        return(paste(info$features[ix], collapse = '_'))
-    })
-    if (return_all) {
-        for (i in seq_along(res$rho)) {
-            colnames(res$rho[[i]]) <- cnames
-        }
-    } else {
-        colnames(res$rho) <- cnames
+    # Interpolate unconstrained coefficients to original pseudotime values
+    eta <- res$eta
+    t_old <- res$x0
+    t_new <- sce[[dyn_corr$time_col]]
+    nc <- dim(eta)[2]
+    eta_int <- matrix(nrow = length(t_new), ncol = nc, dimnames = dimnames(eta))
+    for (j in nc) {
+        eta_int[, j] <- stats::approx(
+            x = t_old,
+            y = eta[, j],
+            xout = t_new,
+            rule = 2
+        )$y
     }
 
-    res <- res[c("rho", "x0", "aic", "h", "bandwidths")]
-    names(res)[names(res) == "x0"] <- "t0"
-    metadata(sce)$dyn_corr <- res
+    # Interpolated correlation coefficients
+    rho_int <- t(apply(eta_int, 1, function(v) {
+        copula::P2p(vec2cor(v))
+    }))
+    if (nc == 1) {
+        rho_int <- t(rho_int)
+    }
+
+    # Map numeric labels to gene names
+    gene_names <- sapply(colnames(res$rho), function(x) {
+        x2 <- unlist(strsplit(x, split = "rho"))[2]
+        ix <- as.numeric(unlist(strsplit(x2, split = '_')))
+        return(paste(dyn_corr$features[ix], collapse = '_'))
+    })
+    colnames(res$eta) <- colnames(res$rho) <- gene_names
+    colnames(eta_int) <- colnames(rho_int) <- gene_names
+
+    metadata(sce)$dyn_corr$x <- res$x
+    metadata(sce)$dyn_corr$x0 <- res$x0
+    metadata(sce)$dyn_corr$h <- res$h
+    metadata(sce)$dyn_corr$eta <- res$eta
+    metadata(sce)$dyn_corr$rho <- res$rho
+    metadata(sce)$dyn_corr$eta_int <- eta_int
+    metadata(sce)$dyn_corr$rho_int <- rho_int
+    metadata(sce)$dyn_corr$aic <- res$aic
+    metadata(sce)$dyn_corr$bandwidths <- res$bandwidths
+
     return(sce)
-}
-
-###############################################################################
-
-#' Get results
-#'
-#' @description Get results from running either \link[DynCopula]{fit_dyn_corr}
-#' or \link[DynCopula]{fit_dyn_corr_sel}.
-#'
-#' @param sce A \code{SingleCellExperiment}.
-#'
-#' @returns A list.
-#'
-#' @export
-get_results <- function(sce) {
-    return(metadata(sce)$dyn_corr)
 }
 
 ###############################################################################

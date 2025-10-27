@@ -14,25 +14,25 @@ sample_cells <- function(sce,
                          times) {
     assert_that(
         methods::is(sce, "SingleCellExperiment"),
-        all(c("dyn_corr_info", "margins", "dyn_corr") %in% names(metadata(sce))),
+        "dyn_corr" %in% names(metadata(sce)),
+        all(c("margins", "rho") %in% names(metadata(sce)$dyn_corr)),
         is.numeric(times)
     )
 
-    info <- metadata(sce)$dyn_corr_info
-    ngenes <- length(info$features)
-
-    counts <- SummarizedExperiment::assay(sce, info$assay)
-    counts <- Matrix::t(counts[info$features, ])
-    pseudotimes <- SummarizedExperiment::colData(sce)[[info$time_col]]
+    dyn_corr <- metadata(sce)$dyn_corr
+    ngenes <- length(dyn_corr$features)
+    counts <- SummarizedExperiment::assay(sce, dyn_corr$assay)
+    counts <- Matrix::t(counts[dyn_corr$features, ])
+    pseudotimes <- SummarizedExperiment::colData(sce)[[dyn_corr$time_col]]
 
     # Out of the time points at which correlation coefficients were estimated,
     # use the closest one to the specified time
-    t0 <- metadata(sce)$dyn_corr$t0
+    t0 <- dyn_corr$t0
     min_ix <- sapply(times, function(x) { which.min(abs(x - t0)) })
 
     message("Sampling copula")
     rho_split <- apply(
-        X = metadata(sce)$dyn_corr$rho,
+        X = dyn_corr$rho,
         MARGIN = 1,
         FUN = c,
         simplify = FALSE
@@ -58,13 +58,13 @@ sample_cells <- function(sce,
 
     # Convert to specified margins
     message("Converting margins")
-    new_times <- stats::setNames(data.frame(times), info$time_col)
+    new_times <- stats::setNames(data.frame(times), dyn_corr$time_col)
     progressr::with_progress({
         pbar <- progressr::progressor(along = seq_len(ngenes))
         counts_sim <- lapply(seq_len(ngenes), function(i) {
             mdat <- data.frame(counts[, i], pseudotimes)
-            names(mdat) <- c("x", info$time_col)
-            mfun <- metadata(sce)$margins[[i]]
+            names(mdat) <- c("x", dyn_corr$time_col)
+            mfun <- dyn_corr$margins[[i]]
             par_pred <- gamlss::predictAll(
                 object = mfun,
                 newdata = new_times,
@@ -86,7 +86,7 @@ sample_cells <- function(sce,
         assays = list(counts = counts_sim)
     )
     colnames(sce_sim) <- paste0("sim", seq_along(times))
-    rownames(sce_sim) <- metadata(sce)$dyn_corr_info$features
+    rownames(sce_sim) <- dyn_corr$features
     sce_sim$pseudotime <- times
     return(sce_sim)
 }
