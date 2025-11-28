@@ -2,34 +2,38 @@
 % Please edit documentation in R/fit_sce.R
 \name{fit_dyn_corr}
 \alias{fit_dyn_corr}
-\title{Time-varying gene correlations}
+\title{Fit a dynamic Gaussian copula to scRNA-seq data}
 \usage{
-fit_dyn_corr(sce, t0 = NULL, h, control = list())
+fit_dyn_corr(sce, bandwidth, control = list(), ncv = NULL)
 }
 \arguments{
 \item{sce}{A \code{SingleCellExperiment}.}
 
-\item{t0}{A vector of pseudotimes to estimate copula parameters at. If
-\code{NULL} (the default), parameters are estimated at all pseudotimes.}
-
-\item{h}{Kernel bandwidth. Must satisfy \code{0 < h < 1}.}
+\item{bandwidth}{Kernel bandwidth. Must be between \code{0} and \code{1}. If
+a vector of bandwidths is passed, then cross validation is used to choose
+the optimal bandwidth.}
 
 \item{control}{A \code{list} of control parameters for optimization.}
+
+\item{ncv}{If multiple bandwidths are passed, leave-one-out cross validation
+is used to choose the optimal bandwidth. This argument specifies the number
+of pseudotime values to use for cross validation. If \code{NULL} (the
+default), all pseudotime values are used. If only a single bandwidth is
+passed, this parameter has no effect.}
 }
 \value{
 The same \code{SingleCellExperiment} as was passed as input, but
 with the metadata entry \code{dyn_corr} updated to include the following
 elements:
 \itemize{
-  \item \code{rho}: Matrix of estimated pairwise correlation coefficients.
-  \item \code{eta}: Matrix of estimated coefficients in the unconstrained
-  space.
-  \item \code{t0}: The input argument \code{t0}.
-  \item \code{h}: The input argument \code{h}.
+  \item \code{rho}: Matrix of estimated copula parameters.
+  \item \code{bandwidth}: The kernel bandwidth used to estimate copula
+  parameters.
 }
 }
 \description{
-Estimate a time-varying gene-gene correlation matrix.
+Fit a dynamic Gaussian copula to scRNA-seq data using local
+likelihood.
 }
 \details{
 This function can only be run after

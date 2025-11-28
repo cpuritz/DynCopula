@@ -1,14 +1,20 @@
 ###############################################################################
 
-#' Time-varying gene correlations
+#' Fit a dynamic Gaussian copula to scRNA-seq data
 #'
-#' @description Estimate a time-varying gene-gene correlation matrix.
+#' @description Fit a dynamic Gaussian copula to scRNA-seq data using local
+#' likelihood.
 #'
 #' @param sce A \code{SingleCellExperiment}.
-#' @param t0 A vector of pseudotimes to estimate copula parameters at. If
-#' \code{NULL} (the default), parameters are estimated at all pseudotimes.
-#' @param h Kernel bandwidth. Must satisfy \code{0 < h < 1}.
+#' @param bandwidth Kernel bandwidth. Must be between \code{0} and \code{1}. If
+#' a vector of bandwidths is passed, then cross validation is used to choose
+#' the optimal bandwidth.
 #' @param control A \code{list} of control parameters for optimization.
+#' @param ncv If multiple bandwidths are passed, leave-one-out cross validation
+#' is used to choose the optimal bandwidth. This argument specifies the number
+#' of pseudotime values to use for cross validation. If \code{NULL} (the
+#' default), all pseudotime values are used. If only a single bandwidth is
+#' passed, this parameter has no effect.
 #'
 #' @details This function can only be run after
 #' \link[DynCopula]{generate_metacells} has been run.
@@ -31,23 +37,21 @@
 #' with the metadata entry \code{dyn_corr} updated to include the following
 #' elements:
 #' \itemize{
-#'   \item \code{rho}: Matrix of estimated pairwise correlation coefficients.
-#'   \item \code{eta}: Matrix of estimated coefficients in the unconstrained
-#'   space.
-#'   \item \code{t0}: The input argument \code{t0}.
-#'   \item \code{h}: The input argument \code{h}.
+#'   \item \code{rho}: Matrix of estimated copula parameters.
+#'   \item \code{bandwidth}: The kernel bandwidth used to estimate copula
+#'   parameters.
 #' }
 #'
 #' @export
 fit_dyn_corr <- function(sce,
-                         t0 = NULL,
-                         h,
-                         control = list()) {
+                         bandwidth,
+                         control = list(),
+                         ncv = NULL) {
     assert_that(
         methods::is(sce, "SingleCellExperiment"),
         "dyn_corr" %in% names(metadata(sce)),
         "metacell_sce" %in% names(metadata(sce)$dyn_corr),
-        is.null(t0) || is.numeric(t0)
+        is.null(ncv) || is.numeric(ncv)
     )
 
     sce_mc <- metadata(sce)$dyn_corr$metacell_sce
@@ -57,65 +61,64 @@ fit_dyn_corr <- function(sce,
     X <- SummarizedExperiment::assay(sce_mc, dyn_corr$assay)
     X <- Matrix::t(X[dyn_corr$features, ])
     pseudotimes <- sce_mc[[dyn_corr$time_col]]
-
-    if (is.null(t0)) {
-        t0 <- sort(unique(pseudotimes))
-    }
+    t0 <- sort(pseudotimes)
 
     FX <- dyn_corr$FX
     FXm <- dyn_corr$FXm
     V <- dyn_corr$V
     NX <- stats::qnorm(FXm + (FX - FXm) * V)
 
-    message("Estimating correlation coefficients")
-    res <- fit_dynamic_gaussian(
-        NX = NX,
-        x = pseudotimes,
-        x0 = t0,
-        h = h,
-        control = control,
-        cores = dyn_corr$cores
-    )
+    if (length(bandwidth) == 1) {
+        message("Estimating correlation coefficients")
+        res <- fit_dynamic_gaussian(
+            NX = NX,
+            x = pseudotimes,
+            x0 = t0,
+            h = bandwidth,
+            control = control,
+            cores = dyn_corr$cores
+        )
+    } else {
+        if (is.null(ncv)) {
+            ncv <- length(pseudotimes)
+        } else {
+            ncv <- as.integer(ncv)
+            assertthat::assert_that(ncv > 0 && ncv <= length(pseudotimes))
+        }
 
-    # Interpolate unconstrained coefficients to original pseudotime values
-    eta <- res$eta
-    t_old <- res$x0
-    t_new <- sce[[dyn_corr$time_col]]
-    nc <- dim(eta)[2]
-    eta_int <- matrix(nrow = length(t_new), ncol = nc, dimnames = dimnames(eta))
-    for (j in nc) {
-        eta_int[, j] <- stats::approx(
-            x = t_old,
-            y = eta[, j],
-            xout = t_new,
-            rule = 2
-        )$y
+        message("Performing cross validation to select bandwidth")
+        cv <- bandwidth_select_cv(
+            NX = NX,
+            x = pseudotimes,
+            bandwidths = bandwidth,
+            xind = ncv,
+            control = control,
+            cores = dyn_corr$cores
+        )
+        h_opt <- cv$bandwidth[which.max(cv$ll)]
+
+        message("Estimating correlation coefficients")
+        res <- fit_dynamic_gaussian(
+            NX = NX,
+            x = pseudotimes,
+            x0 = t0,
+            h = h_opt,
+            control = control,
+            cores = dyn_corr$cores
+        )
     }
 
-    # Interpolated correlation coefficients
-    rho_int <- t(apply(eta_int, 1, function(v) {
-        copula::P2p(vec2cor(v))
-    }))
-    if (nc == 1) {
-        rho_int <- t(rho_int)
-    }
-
-    # Map numeric labels to gene names
+    # Convert numeric labels to gene names
     gene_names <- sapply(colnames(res$rho), function(x) {
         x2 <- unlist(strsplit(x, split = "rho"))[2]
         ix <- as.numeric(unlist(strsplit(x2, split = '_')))
         return(paste(dyn_corr$features[ix], collapse = '_'))
     })
-    colnames(res$eta) <- colnames(res$rho) <- gene_names
-    colnames(eta_int) <- colnames(rho_int) <- gene_names
+    colnames(res$rho) <- gene_names
 
-    metadata(sce)$dyn_corr$x <- res$x
-    metadata(sce)$dyn_corr$x0 <- res$x0
-    metadata(sce)$dyn_corr$h <- res$h
-    metadata(sce)$dyn_corr$eta <- res$eta
+    # Save results in metadata
     metadata(sce)$dyn_corr$rho <- res$rho
-    metadata(sce)$dyn_corr$eta_int <- eta_int
-    metadata(sce)$dyn_corr$rho_int <- rho_int
+    metadata(sce)$dyn_corr$bandwidth <- res$h
 
     return(sce)
 }
