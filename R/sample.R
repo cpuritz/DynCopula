@@ -27,7 +27,7 @@ sample_cells <- function(sce,
 
     # Out of the time points at which correlation coefficients were estimated,
     # use the closest one to the specified time
-    t0 <- dyn_corr$t0
+    t0 <- dyn_corr$x0
     min_ix <- sapply(times, function(x) { which.min(abs(x - t0)) })
 
     message("Sampling copula")

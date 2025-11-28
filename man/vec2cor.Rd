@@ -13,5 +13,9 @@ vec2cor(v)
 A \code{d}x\code{d} correlation matrix.
 }
 \description{
-Convert a vector to a correlation matrix.
+Convert an unconstrained vector to a correlation matrix.
+}
+\details{
+For numerical stability, the maximum magnitude of correlation
+coefficients is capped at \code{1 - 1e-4}.
 }

@@ -15,7 +15,9 @@
 
 .onAttach <- function(libname, pkgname) {
     # Don't print startup messages during development
-    if ("devtools" %in% loadedNamespaces()) return()
+    if ("devtools" %in% loadedNamespaces()) {
+        return()
+    }
 
     # Print message if the package Python environment has not been configured
     config_path <- file.path(rappdirs::user_config_dir(pkgname), "config.json")

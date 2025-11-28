@@ -69,7 +69,6 @@ fit_dynamic_gaussian <- function(NX,
     control <- utils::modifyList(defaults, control)
     assert_that(all(names(control) %in% names(defaults)))
     control$max_itr <- as.integer(control$max_itr)
-    control$patience <- as.integer(control$patience)
 
     # Verify control parameters
     assert_that(
@@ -87,33 +86,84 @@ fit_dynamic_gaussian <- function(NX,
     x <- (x - min_x) / dx
     x0 <- (x0 - min_x) / dx
 
-    # Set up futures plan
-    cl <- parallel::makeCluster(cores)
-    future::plan(future::cluster, workers = cl)
-    on.exit({ future::plan(future::sequential); parallel::stopCluster(cl) },
-            add = TRUE)
+    if (cores > 1L) {
+        # Set up futures plan
+        cl <- parallel::makeCluster(cores)
+        future::plan(future::cluster, workers = cl)
+        on.exit({ future::plan(future::sequential); parallel::stopCluster(cl) },
+                add = TRUE)
 
-    # Parallelized with progress bar
-    progressr::with_progress({
-        pbar <- progressr::progressor(along = x0)
-        eta_est <- future.apply::future_lapply(
-            X = x0,
-            FUN = function(t0) {
-                y <- py_load("dynamic_gaussian")$fit_gaussian(
-                    par0 = .init_par(t0, x, NX, h),
-                    x = x,
-                    NX = NX,
-                    h = h,
-                    control = control,
-                    x0 = t0
-                )
-                pbar()
-                return(y)
-            },
-            future.seed = TRUE,
-            future.globals = c("x", "NX", "h", "control", "pbar")
-        )
-    })
+        # This environment stores the fit_gaussian function once loaded from the
+        # Python module to avoid having to keep reloading it. The module is
+        # loaded one on each worker.
+        .fit_env <- new.env(parent = emptyenv())
+        fit_gaussian <- function(par0, x, NX, h, control, x0) {
+            # Only load the module once per worker
+            if (!exists("fit_fun", envir = .fit_env, inherits = FALSE)) {
+                .fit_env$fit_fun <- reticulate::import_from_path(
+                    module = "dynamic_gaussian",
+                    path = system.file("python", package = "DynCopula"),
+                    delay_load = FALSE
+                )$fit_gaussian
+            }
+            .fit_env$fit_fun(
+                par0 = par0,
+                x = x,
+                NX = NX,
+                h = h,
+                control = control,
+                x0 = x0
+            )
+        }
+
+        # Parallelized with progress bar
+        progressr::with_progress({
+            pbar <- progressr::progressor(along = x0)
+            eta_est <- future.apply::future_lapply(
+                X = x0,
+                FUN = function(t0) {
+                    y <- fit_gaussian(
+                        par0 = .init_par(t0, x, NX, h),
+                        x = x,
+                        NX = NX,
+                        h = h,
+                        control = control,
+                        x0 = t0
+                    )
+                    pbar()
+                    return(y)
+                },
+                future.seed = TRUE,
+                future.globals = TRUE
+            )
+        })
+    } else {
+        # Load Python module
+        fit_fun <- reticulate::import_from_path(
+            module = "dynamic_gaussian",
+            path = system.file("python", package = "DynCopula"),
+            delay_load = FALSE
+        )$fit_gaussian
+
+        progressr::with_progress({
+            pbar <- progressr::progressor(along = x0)
+            eta_est <- lapply(
+                X = x0,
+                FUN = function(t0) {
+                    y <- fit_fun(
+                        par0 = .init_par(t0, x, NX, h),
+                        x = x,
+                        NX = NX,
+                        h = h,
+                        control = control,
+                        x0 = t0
+                    )
+                    pbar()
+                    return(y)
+                }
+            )
+        })
+    }
 
     # Estimated eta matrix
     Hhat <- do.call(rbind, eta_est)
@@ -129,10 +179,10 @@ fit_dynamic_gaussian <- function(NX,
     }
 
     # Add numbered eta/rho labels
+    colnames(Hhat) <- paste0("eta", seq_len(choose(d, 2)))
     ix_lab <- apply(utils::combn(seq_len(d), 2), 2, function(x) {
         paste(x, collapse = '_')
     })
-    colnames(Hhat) <- paste0("eta", ix_lab)
     colnames(Rhat) <- paste0("rho", ix_lab)
 
     # Rescale times back to original scale
@@ -153,105 +203,125 @@ fit_dynamic_gaussian <- function(NX,
 
 #' Bandwidth selection for a dynamic Gaussian copula model
 #'
-#' @description Select the optimal bandwidth for fitting a time-varying Gaussian
-#' copula.
+#' @description Select the optimal kernel bandwidth using leave-one-out cross
+#' validation (LOOCV).
 #'
 #' @param NX Matrix of normal-transformed pseudo-observations at time points.
 #' @param x Vector of time points corresponding to \code{NX}.
 #' Must be sorted and have no duplicates.
 #' @param bandwidths Vector of kernel bandwidths to test.
+#' @param xind Number of points for LOOCV.
 #' @param control A \code{list} of control parameters for optimization.
-#' @param cores Number of cores to use for parallel optimization. Default is
-#' \code{1}.
-#' @param return_all Whether all models should be returned, or just the best.
-#' Default is \code{FALSE}.
+#' @param cores Number of cores to use. Parallelized over \code{bandwidths}.
+#' Default is \code{1}.
 #'
-#' @details See \link[DynCopula]{fit_dynamic_gaussian} for details.
+#' @details See \link[DynCopula]{fit_dynamic_gaussian} for details on parameter
+#' estimation.
 
-#' @return A list with the following components:
-#' \itemize{
-#'   \item \code{x}: The input argument \code{x}.
-#'   \item \code{x0}: The time points at which coefficients were estimated.
-#'   \item \code{h}: The optimal bandwidth selected.
-#'   \item \code{NX}: The input argument \code{NX}.
-#'   \item \code{eta}: Matrix of coefficients in the unconstrained space
-#'   estimated using optimal bandwidth. If \code{return_all = TRUE}, this will
-#'   be a list of matrices, one for each bandwidth.
-#'   \item \code{rho}: Matrix of pairwise correlation coefficients estimated
-#'   using optimal bandwidth. If \code{return_all = TRUE}, this will
-#'   be a list of matrices, one for each bandwidth.
-#'   \item \code{bandwidths}: The input argument \code{bandwidths}.
-#'   \item \code{aic}: Vector of AIC values at each bandwidth.
-#' }
+#' @return A \code{data.frame} specifying the LOOCV log-likelihood at each
+#' bandwidth value.
 #'
 #' @export
-bandwidth_select <- function(NX,
-                             x,
-                             bandwidths,
-                             control = list(),
-                             cores = 1L,
-                             return_all = FALSE) {
+bandwidth_select_cv <- function(NX,
+                                x,
+                                bandwidths,
+                                xind,
+                                control = list(),
+                                cores = 1L) {
     assert_that(
         is.vector(x, mode = "numeric"),
         is.numeric(NX) && is.matrix(NX),
         dim(NX)[1] == length(x),
-        is.numeric(bandwidths),
+        is.numeric(bandwidths) && all(bandwidths > 0) && all(bandwidths < 1),
         !anyDuplicated(x),
-        is.logical(return_all)
+        is.numeric(xind) && xind > 1
     )
 
-    if (return_all) {
-        res_list <- list()
-        for (i in seq_along(bandwidths)) {
-            message("Testing bandwidth = ", bandwidths[i])
-            res <- fit_dynamic_gaussian(
-                NX = NX,
-                x = x,
-                x0 = x,
-                h = bandwidths[i],
-                control = control,
-                cores = cores
-            )
-            aic[i] <- model_aic(res, cores)
-            res_list[[i]] <- res
-        }
-        aic <- sapply(res_list, '[[', "aic")
-        return(list(
-            x = x,
-            x0 = x,
-            h = bandwidths[which.min(aic)],
-            NX = NX,
-            eta = lapply(res_list, '[[', "eta"),
-            rho = lapply(res_list, '[[', "rho"),
-            bandwidths = bandwidths,
-            aic = aic
-        ))
-    } else {
-        # Select model with lowest AIC
-        aic <- numeric(length = length(bandwidths))
-        best_aic <- Inf
-        best_res <- NULL
-        for (i in seq_along(bandwidths)) {
-            message("Testing bandwidth = ", bandwidths[i])
-            res <- fit_dynamic_gaussian(
-                NX = NX,
-                x = x,
-                x0 = x,
-                h = bandwidths[i],
-                control = control,
-                cores = cores
-            )
-            aic[i] <- model_aic(res, cores)
+    # Use xind equally spaced covariate values
+    xind <- as.integer(xind)
+    xind <- unique(floor(seq(1, length(x), length.out = xind)))
 
-            if (aic[i] <= best_aic) {
-                best_aic <- aic[i]
-                best_res <- res
-            }
-        }
-        best_res$aic <- aic
-        best_res$bandwidths <- bandwidths
-        return(best_res)
+    # Compute log-likelihood of eta at ith observation under a Gaussian copula
+    # model
+    loglik <- function(NX_i, eta) {
+        copula_log_dens <- mvtnorm::dmvnorm(
+            x = NX_i,
+            sigma = vec2cor(eta),
+            log = TRUE,
+            checkSymmetry = FALSE
+        )
+        margin_log_dens <- sum(stats::dnorm(NX_i, log = TRUE))
+        return(copula_log_dens - margin_log_dens)
     }
+
+    ll_all <- numeric(length = length(bandwidths))
+    if (cores > 1L) {
+        # Set up futures plan
+        cl <- parallel::makeCluster(cores)
+        future::plan(future::cluster, workers = cl)
+        on.exit({ future::plan(future::sequential); parallel::stopCluster(cl) },
+                add = TRUE)
+
+        for (i in seq_along(bandwidths)) {
+            h <- bandwidths[i]
+            message("Testing bandwidth = ", h)
+
+            # Parallelized with progress bar
+            progressr::with_progress({
+                pbar <- progressr::progressor(along = xind)
+                ll_h <- future.apply::future_lapply(
+                    X = xind,
+                    FUN = function(ix) {
+                        # Estimate copula parameters when leaving out
+                        # observation at ix
+                        eta <- fit_dynamic_gaussian(
+                            NX = NX[-ix, ],
+                            x = x[-ix],
+                            x0 = x[ix],
+                            h = h,
+                            control = control
+                        )$eta
+                        # Log-likelihood of eta at observation ix
+                        ll <- loglik(NX[ix, ], as.vector(eta))
+                        pbar()
+                        return(ll)
+                    },
+                    future.seed = TRUE,
+                    future.globals = c("x", "NX", "h", "control")
+                )
+            })
+            ll_all[i] <- sum(unlist(ll_h))
+        }
+    } else {
+        for (i in seq_along(bandwidths)) {
+            h <- bandwidths[i]
+            message("Testing bandwidth = ", h)
+
+            progressr::with_progress({
+                pbar <- progressr::progressor(along = xind)
+                ll_h <- lapply(
+                    X = xind,
+                    FUN = function(ix) {
+                        # Estimate copula parameters when leaving out
+                        # observation at ix
+                        eta <- fit_dynamic_gaussian(
+                            NX = NX[-ix, ],
+                            x = x[-ix],
+                            x0 = x[ix],
+                            h = h,
+                            control = control
+                        )$eta
+                        # Log-likelihood of eta at observation ix
+                        ll <- loglik(NX[ix, ], as.vector(eta))
+                        pbar()
+                        return(ll)
+                    }
+                )
+            })
+            ll_all[i] <- sum(unlist(ll_h))
+        }
+    }
+    return(data.frame(bandwidth = bandwidths, ll = ll_all))
 }
 
 ###############################################################################

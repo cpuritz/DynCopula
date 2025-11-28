@@ -1,23 +1,5 @@
 ###############################################################################
 
-#' Load Python module
-#'
-#' @description Lazily load a Python module.
-#'
-#' @param module Name of module to load.
-#'
-#' @returns An R object wrapping a Python module.
-py_load <- function(module = c("dynamic_gaussian")) {
-    module <- match.arg(module)
-    return(reticulate::import_from_path(
-        module = module,
-        path = system.file("python", package = "DynCopula"),
-        delay_load = TRUE
-    ))
-}
-
-###############################################################################
-
 #' Build Python virtual environment
 #'
 #' @description Build a Python virtual environment for the package to use. Only
@@ -39,12 +21,13 @@ pkg_setup <- function(python = reticulate::virtualenv_starter(NULL)) {
     # Path to virtual environment
     cache_dir <- rappdirs::user_cache_dir("DynCopula")
     envname <- file.path(cache_dir, "venv", "r-dyncopula")
+
     # Create virtual environment
     reticulate::virtualenv_create(
         envname = envname,
         python = python,
         force = TRUE,
-        packages = c("numpy", "torch", "botorch")
+        packages = c("numpy", "torch")
     )
 
     # Link headers

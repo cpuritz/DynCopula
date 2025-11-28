@@ -2,16 +2,19 @@
 
 #' Correlation matrix to vector
 #'
-#' @description Convert a correlation matrix to vector.
+#' @description Convert a correlation matrix to an unconstrained vector.
 #'
 #' @param R A \code{d}x\code{d} correlation matrix.
 #'
 #' @returns A vector of length \code{choose(d, 2)}.
 #'
+#' @details For numerical stability, the maximum magnitude of correlation
+#' coefficients is capped at \code{1 - 1e-4}.
+#'
 #' @export
 cor2vec <- function(R) {
     scale <- 0.5
-    rho_max <- 0.999
+    rho_max <- 1 - 1e-4
     eps <- 1e-12
 
     d <- dim(R)[1]
@@ -41,16 +44,19 @@ cor2vec <- function(R) {
 
 #' Vector to correlation matrix
 #'
-#' @description Convert a vector to a correlation matrix.
+#' @description Convert an unconstrained vector to a correlation matrix.
 #'
 #' @param v A vector of length \code{choose(d, 2)}.
 #'
 #' @returns A \code{d}x\code{d} correlation matrix.
 #'
+#' @details For numerical stability, the maximum magnitude of correlation
+#' coefficients is capped at \code{1 - 1e-4}.
+#'
 #' @export
 vec2cor <- function(v) {
     scale <- 0.5
-    rho_max <- 0.999
+    rho_max <- 1 - 1e-4
 
     d <- as.integer((1 + sqrt(1 + 8 * length(v))) / 2)
 

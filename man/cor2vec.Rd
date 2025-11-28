@@ -13,5 +13,9 @@ cor2vec(R)
 A vector of length \code{choose(d, 2)}.
 }
 \description{
-Convert a correlation matrix to vector.
+Convert a correlation matrix to an unconstrained vector.
+}
+\details{
+For numerical stability, the maximum magnitude of correlation
+coefficients is capped at \code{1 - 1e-4}.
 }

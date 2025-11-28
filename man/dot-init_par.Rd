@@ -16,7 +16,7 @@
 \item{h}{Kernel bandwidth.}
 }
 \value{
-Parameter vector
+Parameter vector.
 }
 \description{
 Initial parameter guess

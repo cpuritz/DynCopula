@@ -7,7 +7,7 @@
 #' @param NX Matrix of normal-transformed pseudo-observations.
 #' @param h Kernel bandwidth.
 #'
-#' @returns Parameter vector
+#' @returns Parameter vector.
 .init_par <- function(x0, x, NX, h) {
     # Use nearby points to estimate initial correlation matrix
     dx <- abs(x0 - x)
@@ -18,11 +18,12 @@
     NX_loc <- NX[which(abs(dx) <= thr), ]
     cor_loc <- stats::cor(NX_loc, method = "pearson")
 
-    # Sometimes the Cholesky decomposition fails. This generally occurs if
-    # cor_loc is numerically not positive definite, even though it theoretically
-    # is. If this happens, fall back to the identity matrix.
+    # Sometimes the Cholesky decomposition fails, in which case cor2vec will
+    # fail. This generally occurs when cor_loc is numerically not positive
+    # definite, even though it theoretically should be. If this happens, call
+    # nearPD.
     if (inherits(try(chol(cor_loc), silent = TRUE), "try-error")) {
-        cor_loc <- diag(d)
+        cor_loc <- Matrix::nearPD(cor_loc, corr = TRUE, base.matrix = TRUE)$mat
     }
 
     # Convert to vector

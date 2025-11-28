@@ -2,7 +2,7 @@
 % Please edit documentation in R/setup.R
 \name{setup}
 \alias{setup}
-\title{Setup}
+\title{Setup a SingleCellExperiment}
 \usage{
 setup(sce, time_col, features = NULL, assay = "counts", cores = 1L)
 }
@@ -26,5 +26,5 @@ list recording \code{time_col}, \code{features}, \code{assay}, and
 \code{cores}.
 }
 \description{
-Setup a SingleCellExperiment by adding necessary metadata.
+Setup a \code{SingleCellExperiment} by adding necessary metadata.
 }

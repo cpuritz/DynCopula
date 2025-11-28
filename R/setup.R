@@ -1,8 +1,8 @@
 ###############################################################################
 
-#' Setup
+#' Setup a SingleCellExperiment
 #'
-#' @description Setup a SingleCellExperiment by adding necessary metadata.
+#' @description Setup a \code{SingleCellExperiment} by adding necessary metadata.
 #'
 #' @param sce A \code{SingleCellExperiment}.
 #' @param time_col The name of the column containing pseudotimes.

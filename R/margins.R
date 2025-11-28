@@ -34,7 +34,17 @@
         pX <- function(x) {
             do.call(pfun, c(list(q = x), par))
         }
-        return(list(FX = pX(counts[, i]), FXm = pX(counts[, i] - 1)))
+        FX <- pX(counts[, i])
+        FXm <- pX(counts[, i] - 1)
+
+        # Push away from boundaries of unit cube
+        eps <- 1e-10
+        FX[FX == 1] <- 1 - eps
+        FX[FX == 0] <- eps
+        FXm[FXm == 1] <- 1 - eps
+        FXm[FXm == 0] <- eps
+
+        return(list(FX = FX, FXm = FXm))
     })
     return(list(
         FX = do.call(cbind, lapply(pobs, '[[', "FX")),
