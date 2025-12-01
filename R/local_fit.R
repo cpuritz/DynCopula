@@ -2,12 +2,13 @@
 
 #' Fit a dynamic Gaussian copula model
 #'
-#' @description Fit a time-varying Gaussian copula to a time series.
+#' @description Fit a dynamic Gaussian copula model.
 #'
-#' @param NX Matrix of normal-transformed pseudo-observations at time points.
-#' @param x Vector of time points corresponding to \code{NX}.
-#' Must be sorted and have no duplicates.
-#' @param x0 Time points to estimate copula parameters at.
+#' @param NX Matrix of normal-transformed pseudo-observations at covariate
+#' values.
+#' @param x Vector of covariate values corresponding to \code{NX}. Must be
+#' sorted and have no duplicates.
+#' @param x0 Covariate values to estimate copula parameters at.
 #' @param h Kernel bandwidth. Must satisfy \code{0 < h < 1}.
 #' @param degree Degree of local polynomial approximation. Default is \code{0}.
 #' @param control A \code{list} of control parameters for optimization.
@@ -18,8 +19,9 @@
 #' is a list that supplies control parameters for optimization. The following
 #' parameters can be supplied:
 #' \itemize{
-#'   \item \code{max_epoch} Maximum number of epochs. Default is \code{1}.
-#'   \item \code{max_itr} Maximum number of internal iterations. Default is
+#'   \item \code{max_outer} Maximum number of outer iterations. Default is
+#'   \code{1}.
+#'   \item \code{max_itr} Maximum number of inner iterations. Default is
 #'   \code{100}.
 #'   \item \code{history_size} History size. Default is \code{30}.
 #'   \item \code{tolerance_grad} Termination tolerance for gradient. Default is
@@ -34,8 +36,7 @@
 #'   \item \code{x0}: The input argument \code{x0}.
 #'   \item \code{h}: The input argument \code{h}.
 #'   \item \code{NX}: The input argument \code{NX}.
-#'   \item \code{eta}: Matrix of estimated coefficients in the unconstrained
-#'   space.
+#'   \item \code{eta}: Matrix of estimated calibration coefficients.
 #'   \item \code{rho}: Matrix of estimated pairwise correlation coefficients.
 #' }
 #'
@@ -64,7 +65,7 @@ fit_dynamic_gaussian <- function(NX,
 
     # Default control parameters
     defaults <- list(
-        max_epoch = 1L,
+        max_outer = 1L,
         max_itr = 100L,
         history_size = 30L,
         tolerance_grad = 1e-7,
@@ -77,14 +78,14 @@ fit_dynamic_gaussian <- function(NX,
     # Verify control parameters
     assert_that(
         all(sapply(control, is.numeric)),
-        control$max_epoch >= 1L,
+        control$max_outer >= 1L,
         control$max_itr >= 1L,
         control$history_size >= 1L,
         control$tolerance_grad > 0,
         control$tolerance_change > 0
     )
 
-    # Scale times to [0, 1]
+    # Scale covariates to [0, 1]
     min_x <- x[1]
     dx <- x[length(x)] - min_x
     x <- (x - min_x) / dx
@@ -97,12 +98,12 @@ fit_dynamic_gaussian <- function(NX,
         on.exit({ future::plan(future::sequential); parallel::stopCluster(cl) },
                 add = TRUE)
 
-        # This environment stores the fit_gaussian function once loaded from the
-        # Python module to avoid having to keep reloading it. The module is
-        # loaded one on each worker.
+        # This environment stores the fit_gaussian function once it has been
+        # loaded from the Python module to avoid having to repeatedly load it.
+        # The module is loaded once on each worker.
         .fit_env <- new.env(parent = emptyenv())
         fit_gaussian <- function(par0, x, NX, h, control, x0) {
-            # Only load the module once per worker
+            # Load the module if it hasn't been loaded yet
             if (!exists("fit_fun", envir = .fit_env, inherits = FALSE)) {
                 .fit_env$fit_fun <- reticulate::import_from_path(
                     module = "dynamic_gaussian",
@@ -171,14 +172,14 @@ fit_dynamic_gaussian <- function(NX,
         })
     }
 
-    # Estimated eta matrix
+    # Matrix of estimated calibration coefficients
     Hhat <- do.call(rbind, eta_est)
-    # Estimated correlation matrix
+    # Matrix of estimated correlation coefficients
     Rhat <- t(apply(Hhat, 1, function(v) {
         copula::P2p(vec2cor(v))
     }))
 
-    # Needed to ensure consistent shape of Rhat across all dimensions
+    # Ensure consistent shape of Rhat across all dimensions
     d <- dim(NX)[2]
     if (d == 2) {
         Rhat <- t(Rhat)
@@ -191,7 +192,7 @@ fit_dynamic_gaussian <- function(NX,
     })
     colnames(Rhat) <- paste0("rho", ix_lab)
 
-    # Rescale times back to original scale
+    # Rescale covariates back to their original scale
     x <- x * dx + min_x
     x0 <- x0 * dx + min_x
 
@@ -209,14 +210,16 @@ fit_dynamic_gaussian <- function(NX,
 
 #' Bandwidth selection for a dynamic Gaussian copula model
 #'
-#' @description Select the optimal kernel bandwidth using leave-one-out cross
-#' validation (LOOCV).
+#' @description Select the optimal kernel bandwidth for a dynamic Gaussian
+#' copula model using leave-one-out cross validation (LOOCV).
 #'
-#' @param NX Matrix of normal-transformed pseudo-observations at time points.
-#' @param x Vector of time points corresponding to \code{NX}.
-#' Must be sorted and have no duplicates.
+#' @param NX Matrix of normal-transformed pseudo-observations at covariate
+#' values.
+#' @param x Vector of covariate values corresponding to \code{NX}. Must be
+#' sorted and have no duplicates.
 #' @param bandwidths Vector of kernel bandwidths to test.
-#' @param xind Number of points for LOOCV.
+#' @param xind Number of covariate values to use for LOOCV. Default is
+#' \code{length(x)}.
 #' @param degree Degree of local polynomial approximation. Default is \code{0}.
 #' @param control A \code{list} of control parameters for optimization.
 #' @param cores Number of cores to use. Parallelized over \code{bandwidths}.
@@ -224,18 +227,28 @@ fit_dynamic_gaussian <- function(NX,
 #'
 #' @details See \link[DynCopula]{fit_dynamic_gaussian} for details on parameter
 #' estimation.
-
-#' @return A \code{data.frame} specifying the LOOCV log-likelihood at each
-#' bandwidth value.
+#'
+#' The argument \code{xind} specifies the number of covariate values to use for
+#' LOOCV. Full LOOCV corresponds to \code{xind = length(x)}. If
+#' \code{xind < length(x)}, then only a subset of the covariates are used to
+#' reduce the run time. The indices of the chosen covariates are equally spaced
+#' along \code{seq_along(x)}. This is only an estimate to full LOOCV and may be
+#' quite inaccurate for \code{xind << length(x)}.
+#'
+#' The optimal bandwidth is the one that maximizes the cross-validated
+#' likelihood criterion.
+#'
+#' @return A \code{data.frame} specifying the cross-validated likelihood
+#' criterion at each bandwidth value.
 #'
 #' @export
-bandwidth_select_cv <- function(NX,
-                                x,
-                                bandwidths,
-                                xind,
-                                degree = 0L,
-                                control = list(),
-                                cores = 1L) {
+bandwidth_select <- function(NX,
+                             x,
+                             bandwidths,
+                             xind = length(x),
+                             degree = 0L,
+                             control = list(),
+                             cores = 1L) {
     assert_that(
         is.vector(x, mode = "numeric"),
         is.numeric(NX) && is.matrix(NX),
@@ -248,19 +261,22 @@ bandwidth_select_cv <- function(NX,
 
     # Use xind equally spaced covariate values
     xind <- as.integer(xind)
-    xind <- unique(floor(seq(1, length(x), length.out = xind)))
+    if (xind == length(x)) {
+        xind <- seq_along(x)
+    } else {
+        xind <- unique(floor(seq(1, length(x), length.out = xind)))
+    }
 
-    # Compute log-likelihood of eta at ith observation under a Gaussian copula
-    # model
-    loglik <- function(NX_i, eta) {
-        copula_log_dens <- mvtnorm::dmvnorm(
-            x = NX_i,
+    # Log-likelihood of eta given Y under a Gaussian copula model
+    loglik <- function(Y, eta) {
+        copula_ll <- mvtnorm::dmvnorm(
+            x = Y,
             sigma = vec2cor(eta),
             log = TRUE,
             checkSymmetry = FALSE
         )
-        margin_log_dens <- sum(stats::dnorm(NX_i, log = TRUE))
-        return(copula_log_dens - margin_log_dens)
+        margin_ll <- sum(stats::dnorm(Y, log = TRUE))
+        return(copula_ll - margin_ll)
     }
 
     ll_all <- numeric(length = length(bandwidths))
@@ -281,7 +297,7 @@ bandwidth_select_cv <- function(NX,
                 ll_h <- future.apply::future_lapply(
                     X = xind,
                     FUN = function(ix) {
-                        # Estimate copula parameters when leaving out
+                        # Estimate calibration coefficients when leaving out
                         # observation at ix
                         eta <- fit_dynamic_gaussian(
                             NX = NX[-ix, ],
@@ -291,13 +307,14 @@ bandwidth_select_cv <- function(NX,
                             degree = degree,
                             control = control
                         )$eta
-                        # Log-likelihood of eta at observation ix
+                        # Log-likelihood of estimated calibration coefficients
+                        # at observation ix
                         ll <- loglik(NX[ix, ], as.vector(eta))
                         pbar()
                         return(ll)
                     },
                     future.seed = TRUE,
-                    future.globals = c("x", "NX", "h", "control")
+                    future.globals = TRUE
                 )
             })
             ll_all[i] <- sum(unlist(ll_h))
@@ -312,7 +329,7 @@ bandwidth_select_cv <- function(NX,
                 ll_h <- lapply(
                     X = xind,
                     FUN = function(ix) {
-                        # Estimate copula parameters when leaving out
+                        # Estimate calibration coefficients when leaving out
                         # observation at ix
                         eta <- fit_dynamic_gaussian(
                             NX = NX[-ix, ],
@@ -322,7 +339,8 @@ bandwidth_select_cv <- function(NX,
                             degree = degree,
                             control = control
                         )$eta
-                        # Log-likelihood of eta at observation ix
+                        # Log-likelihood of estimated calibration coefficients
+                        # at observation ix
                         ll <- loglik(NX[ix, ], as.vector(eta))
                         pbar()
                         return(ll)
@@ -332,7 +350,7 @@ bandwidth_select_cv <- function(NX,
             ll_all[i] <- sum(unlist(ll_h))
         }
     }
-    return(data.frame(bandwidth = bandwidths, ll = ll_all))
+    return(data.frame(bandwidth = bandwidths, cv = ll_all))
 }
 
 ###############################################################################

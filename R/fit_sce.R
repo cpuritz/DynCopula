@@ -87,7 +87,7 @@ fit_dyn_corr <- function(sce,
         }
 
         message("Performing cross validation to select bandwidth")
-        cv <- bandwidth_select_cv(
+        cv <- bandwidth_select(
             NX = NX,
             x = pseudotimes,
             bandwidths = bandwidth,

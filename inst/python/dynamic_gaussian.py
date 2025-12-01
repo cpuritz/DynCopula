@@ -42,7 +42,7 @@ def fit_gaussian(
 		A 1D array containing the estimates of the calibration coefficients.
 	"""
 
-	max_epoch = int(control["max_epoch"])
+	max_outer = int(control["max_outer"])
 	max_iter = int(control["max_itr"])
 	history_size = int(control["history_size"])
 	tolerance_grad = float(control["tolerance_grad"])
@@ -79,7 +79,7 @@ def fit_gaussian(
 		loss.backward()
 		return loss
 
-	for _ in range(max_epoch):
+	for _ in range(max_outer):
 		loss = optimizer.step(closure)
 	par_est = eta.detach().numpy()
 	

@@ -7,12 +7,13 @@
 fit_dynamic_gaussian(NX, x, x0, h, degree = 0L, control = list(), cores = 1L)
 }
 \arguments{
-\item{NX}{Matrix of normal-transformed pseudo-observations at time points.}
+\item{NX}{Matrix of normal-transformed pseudo-observations at covariate
+values.}
 
-\item{x}{Vector of time points corresponding to \code{NX}.
-Must be sorted and have no duplicates.}
+\item{x}{Vector of covariate values corresponding to \code{NX}. Must be
+sorted and have no duplicates.}
 
-\item{x0}{Time points to estimate copula parameters at.}
+\item{x0}{Covariate values to estimate copula parameters at.}
 
 \item{h}{Kernel bandwidth. Must satisfy \code{0 < h < 1}.}
 
@@ -30,21 +31,21 @@ A list with the following components:
   \item \code{x0}: The input argument \code{x0}.
   \item \code{h}: The input argument \code{h}.
   \item \code{NX}: The input argument \code{NX}.
-  \item \code{eta}: Matrix of estimated coefficients in the unconstrained
-  space.
+  \item \code{eta}: Matrix of estimated calibration coefficients.
   \item \code{rho}: Matrix of estimated pairwise correlation coefficients.
 }
 }
 \description{
-Fit a time-varying Gaussian copula to a time series.
+Fit a dynamic Gaussian copula model.
 }
 \details{
 Optimization is performed using L-BFGS. The \code{control} argument
 is a list that supplies control parameters for optimization. The following
 parameters can be supplied:
 \itemize{
-  \item \code{max_epoch} Maximum number of epochs. Default is \code{1}.
-  \item \code{max_itr} Maximum number of internal iterations. Default is
+  \item \code{max_outer} Maximum number of outer iterations. Default is
+  \code{1}.
+  \item \code{max_itr} Maximum number of inner iterations. Default is
   \code{100}.
   \item \code{history_size} History size. Default is \code{30}.
   \item \code{tolerance_grad} Termination tolerance for gradient. Default is
