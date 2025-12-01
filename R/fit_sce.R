@@ -95,7 +95,7 @@ fit_dyn_corr <- function(sce,
             control = control,
             cores = dyn_corr$cores
         )
-        h_opt <- cv$bandwidth[which.max(cv$ll)]
+        h_opt <- cv$bandwidth[which.max(cv$cv)]
 
         message("Estimating correlation coefficients")
         res <- fit_dynamic_gaussian(
