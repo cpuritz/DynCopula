@@ -9,6 +9,7 @@
 #' Must be sorted and have no duplicates.
 #' @param x0 Time points to estimate copula parameters at.
 #' @param h Kernel bandwidth. Must satisfy \code{0 < h < 1}.
+#' @param degree Degree of local polynomial approximation. Default is \code{0}.
 #' @param control A \code{list} of control parameters for optimization.
 #' @param cores Number of cores to use for parallel optimization. Parallelized
 #' over \code{x0}. Default is \code{1}.
@@ -43,6 +44,7 @@ fit_dynamic_gaussian <- function(NX,
                                  x,
                                  x0,
                                  h,
+                                 degree = 0L,
                                  control = list(),
                                  cores = 1L) {
     # Basic checks
@@ -54,9 +56,11 @@ fit_dynamic_gaussian <- function(NX,
         is.numeric(cores) && cores >= 1,
         is.list(control),
         !anyDuplicated(x) && !is.unsorted(x),
-        is.numeric(x0)
+        is.numeric(x0),
+        is.numeric(degree) && degree >= 0
     )
     cores <- as.integer(cores)
+    degree <- as.integer(degree)
 
     # Default control parameters
     defaults <- list(
@@ -112,7 +116,8 @@ fit_dynamic_gaussian <- function(NX,
                 NX = NX,
                 h = h,
                 control = control,
-                x0 = x0
+                x0 = x0,
+                degree = degree
             )
         }
 
@@ -156,7 +161,8 @@ fit_dynamic_gaussian <- function(NX,
                         NX = NX,
                         h = h,
                         control = control,
-                        x0 = t0
+                        x0 = t0,
+                        degree = degree
                     )
                     pbar()
                     return(y)
@@ -211,6 +217,7 @@ fit_dynamic_gaussian <- function(NX,
 #' Must be sorted and have no duplicates.
 #' @param bandwidths Vector of kernel bandwidths to test.
 #' @param xind Number of points for LOOCV.
+#' @param degree Degree of local polynomial approximation. Default is \code{0}.
 #' @param control A \code{list} of control parameters for optimization.
 #' @param cores Number of cores to use. Parallelized over \code{bandwidths}.
 #' Default is \code{1}.
@@ -226,6 +233,7 @@ bandwidth_select_cv <- function(NX,
                                 x,
                                 bandwidths,
                                 xind,
+                                degree = 0L,
                                 control = list(),
                                 cores = 1L) {
     assert_that(
@@ -234,7 +242,8 @@ bandwidth_select_cv <- function(NX,
         dim(NX)[1] == length(x),
         is.numeric(bandwidths) && all(bandwidths > 0) && all(bandwidths < 1),
         !anyDuplicated(x),
-        is.numeric(xind) && xind > 1
+        is.numeric(xind) && xind > 1,
+        is.numeric(degree) && degree >= 0
     )
 
     # Use xind equally spaced covariate values
@@ -279,6 +288,7 @@ bandwidth_select_cv <- function(NX,
                             x = x[-ix],
                             x0 = x[ix],
                             h = h,
+                            degree = degree,
                             control = control
                         )$eta
                         # Log-likelihood of eta at observation ix
@@ -309,6 +319,7 @@ bandwidth_select_cv <- function(NX,
                             x = x[-ix],
                             x0 = x[ix],
                             h = h,
+                            degree = degree,
                             control = control
                         )$eta
                         # Log-likelihood of eta at observation ix

@@ -2,6 +2,7 @@ import torch
 import numpy as np
 import math
 from functools import lru_cache
+from typing import Mapping, Union
 
 ###############################################################################
 
@@ -10,7 +11,8 @@ def fit_gaussian(
 	x: np.ndarray,
 	NX: np.ndarray,
 	h: float,
-	control: Mapping[str, float | int],
+	degree: int,
+	control: Mapping[str, Union[float, int]],
 	x0: float
 ) -> float:
 	"""
@@ -27,6 +29,8 @@ def fit_gaussian(
 		correspond to `x`.
 	h : float
 		Kernel bandwidth.
+	degree : int
+        Degree of local polynomial approximation.
 	control : Mapping[str, float | int]
 		Optimization control parameters.
 	x0 : float
@@ -43,9 +47,16 @@ def fit_gaussian(
 	history_size = int(control["history_size"])
 	tolerance_grad = float(control["tolerance_grad"])
 	tolerance_change = float(control["tolerance_change"])
+	degree = int(degree)
+	par0 = np.atleast_1d(par0)
 	
+	# Set initial derivative values to zero
+	npar = len(par0)
+	par0 = np.concatenate([par0, np.zeros(degree * npar)])
+	
+	# Set up tensors
 	eta = torch.tensor(
-		np.atleast_1d(par0).tolist(),
+		par0.tolist(),
 		dtype = torch.float64,
 		requires_grad = True
 	)
@@ -64,14 +75,18 @@ def fit_gaussian(
 	
 	def closure():
 		optimizer.zero_grad()
-		loss = -1.0 * _local_loglik(eta, x, x0, NX, h)
+		loss = -1.0 * _local_loglik(eta, x, x0, NX, h, degree)
 		loss.backward()
 		return loss
 
 	for _ in range(max_epoch):
 		loss = optimizer.step(closure)
-		
-	return eta.detach().numpy()
+	par_est = eta.detach().numpy()
+	
+	# Only interested in function estimates, not derivative estimates
+	par_est = par_est[0:npar]
+	
+	return par_est
 
 ###############################################################################
 	
@@ -80,7 +95,8 @@ def _local_loglik(
 	x: torch.Tensor,
 	x0: torch.Tensor,
 	NX: torch.Tensor,
-	h: float
+	h: float,
+	degree: int
 ) -> torch.Tensor:
 	"""
 	Compute the local log-likelihood for a Gaussian copula.
@@ -93,12 +109,16 @@ def _local_loglik(
 	x : torch.Tensor
 		A 1D tensor of covariate values.
 	x0 : torch.Tensor
-		A scalar specifying the covariate value to estimate copula parameters at.
+		A scalar specifying the covariate value to estimate copula parameters
+		at.
 	NX : torch.Tensor
-		Normal-transformed pseudo-observations. Must be tensor of size `(n x d)`,
-		where `n` is the length of `x` (rows correspond to values in `x`).
+		Normal-transformed pseudo-observations. Must be tensor of size
+		`(n x d)`, where `n` is the length of `x` (rows correspond to values in
+		`x`).
 	h : float
 		Kernel bandwidth.
+	degree : int
+	    Degree of local polynomial approximation.
 
 	Returns
 	-------
@@ -107,50 +127,67 @@ def _local_loglik(
 	"""
 
 	# Epanechnikov kernel weights
-	u = (x - x0) / h
-	wgt = 3 / (4 * h) * torch.clamp(1 - u * u, min = 0)
-	# Record where weights are nonzero to avoid unnecessary likelihood evaluations
+	dx = x - x0
+	wgt = 3 / (4 * h) * torch.clamp(1 - (dx / h)**2, min = 0)
+	# Record where weights are nonzero to avoid unnecessary likelihood
+	# evaluations
 	mask = wgt > 0
 
-	# Model log-likelihoods. Not the exact log-likelihoods for a Gaussian copula,
-	# but the other terms don't depend on the correlation matrix and thus are
-	# irrelevant during estimation.
-	P = _log_mvn_density(NX[mask, :], eta)
+	# Compute model log-likelihoods. Note that these are not the exact
+	# log-likelihoods for a Gaussian copula, but the other terms don't depend
+	# on the correlation matrix and thus can safely be ignored.
+	powers = torch.arange(0, degree + 1).unsqueeze(0)
+	dxp = dx.unsqueeze(1) ** powers
+	eta_local = torch.matmul(dxp, eta.view(degree + 1, -1))
+	if degree == 0:
+	    # Coefficients are identical, no need to compute more than one
+	    # correlation matrix
+	    eta_local = eta_local[0, :]
+	else:
+	    eta_local = eta_local[mask, :].T
+	P = _log_mvn_density(NX[mask, :], eta_local)
 
 	# Local log-likelihood
 	return torch.dot(wgt[mask], P)
 
 ###############################################################################
 
-def _log_mvn_density(x: torch.Tensor, v: torch.Tensor) -> torch.Tensor:
+def _log_mvn_density(
+    x: torch.Tensor,
+    V: torch.Tensor
+) -> torch.Tensor:
 	"""
 	Compute the log-density of a multivariate Gaussian distribution.
 
  	Parameters
 	----------
 	x : torch.Tensor
-		Input samples of shape `(..., d)`, where `d` is the dimensionality.
-	v : torch.Tensor
-		A vector of unconstrained parameters of length `choose(d, 2)`
-		parametrizing the covariance matrix.
+        Input samples of shape `(N, d)`, where `d` is the dimensionality.
+    V : torch.Tensor
+        Either of shape `(npar,)` or `(npar, N)`. In the former case, one
+        covariance matrix is constructed for all samples. In the latter case,
+        one covariance matrix is constructed for each sample. `npar` must equal
+        `choose(d, 2)`.
 
 	Returns
 	-------
 	torch.Tensor
 		The log-density of each sample under the parameterized multivariate
-		Gaussian. Output shape matches the batch dimensions of `x`.
+		Gaussian.
 	"""
 
 	d = x.shape[-1]
-
+	
 	# Convert the unconstrained parameter vector to a Cholesky factor
-	L = _vec2chol(v)
+	L = _vec2chol(V)
+	
 	# Compute m = L^(-1) x
 	m = torch.linalg.solve_triangular(L, x.unsqueeze(-1), upper = False)
+	
 	# Mahalanobis distance between x and the Gaussian copula specified by L
-	M = (m * m).sum(dim = -2)[..., 0]
+	M = (m * m).sum(dim = -2).squeeze(-1)
 
-	# Compute 0.5 * log|R| for R=LL^T
+	# Compute 0.5*log|R| for R=LL^T
 	diag = L.diagonal(dim1 = -2, dim2 = -1)
 	half_log_det = diag.clamp_min(torch.finfo(torch.float64).eps).log().sum(-1)
 
@@ -160,17 +197,17 @@ def _log_mvn_density(x: torch.Tensor, v: torch.Tensor) -> torch.Tensor:
 ###############################################################################
 
 def _vec2chol(
-	v: torch.Tensor,
-	rho_max: float = 0.9999,
-	scale: float = 0.5
+    V: torch.Tensor,
+    rho_max: float = 0.9999,
+    scale: float = 0.5
 ) -> torch.Tensor:
-	"""
+    """
     Map a vector of unconstrained values to a valid Cholesky factor.
 
     Parameters
     ----------
-    v : torch.Tensor
-        A 1D tensor.
+    V : torch.Tensor
+        Either of shape `(npar,)` or `(npar, N)`.
     rho_max : float, optional
         Maximum allowed magnitude for off-diagonal correlations.
     scale : float, optional
@@ -179,27 +216,39 @@ def _vec2chol(
     Returns
     -------
     torch.Tensor
-        A lower-triangular `(d x d)` matrix representing a Cholesky factor.
+        If V was 1D, then a 2D tensor of shape `(d, d)` representing a Cholesky
+        factor. Otherwise, a 3D tensor of shape `(N, d, d)`, which each batch
+        representing a separate Cholesky factor.
     """
+    
+    # Add batch dimension
+    if V.ndim == 1:
+        V = V.unsqueeze(-1)
+    npar, nbatch = V.shape
+    
+    d = (1 + math.isqrt(1 + 8 * npar)) // 2
+    r, c, mask = _tril_col_major(d)
 
-	# Length of v determines the dimension of the matrix. The length of v
-	# should equal choose(d, 2) for a positive integer d.
-	d = (1 + math.isqrt(1 + 8 * v.numel())) // 2
+    # Base identity stacked for batch
+    H = torch.eye(d, dtype = torch.float64).expand(nbatch, d, d).clone()
 
-	# Fill strictly lower-triangular entries of H in column-major order
-	r, c, mask = _tril_col_major(d)
-	H = torch.eye(d, dtype = torch.float64)
-	H[r, c] = rho_max * torch.tanh(scale * v)
+    # Fill strictly lower triangular entries
+    H[:, r, c] = rho_max * torch.tanh(scale * V.T)
 
-	eps = 1e-12
-	X = H[:, :-1].pow(2).clamp_max(1 - eps)
-	logS = torch.log1p(-X) * mask.to(torch.float64)
-	sqrtcprod = torch.exp(0.5 * torch.cumsum(logS, dim = 1))
+    # Compute cumulative product term
+    X = H[:, :, :-1].pow(2).clamp_max(1 - torch.finfo(torch.float64).eps)
+    logS = torch.log1p(-X) * mask[:, :-1]
+    sqrtcprod = torch.exp(0.5 * torch.cumsum(logS, dim = 2))
 
-	L = torch.zeros((d, d), dtype = torch.float64)
-	L[:, 0] = H[:, 0]
-	L[:, 1:] = H[:, 1:] * sqrtcprod
-	return L
+    # Build Cholesky factor
+    L = torch.zeros((nbatch, d, d), dtype = torch.float64)
+    L[:, :, 0] = H[:, :, 0]
+    L[:, :, 1:] = H[:, :, 1:] * sqrtcprod
+    
+    # If initially unbatched, remove batch dimension
+    L = L.squeeze(0)
+    
+    return L
 
 ###############################################################################
 
@@ -221,15 +270,14 @@ def _tril_col_major(d: int):
     mask : torch.Tensor
         Boolean mask where `mask[i, j]` is True if `j < i`.
     """
-
-	# Lower triangular indices in column major order
 	rows, cols = torch.tril_indices(d, d, offset = -1)
+	# Convert from row-major order to column-major order
 	order = torch.argsort(cols * d + rows)
-
-	r = torch.arange(d).unsqueeze(1)
-	c = torch.arange(d - 1).unsqueeze(0)
-	mask = (c < r)
+	rows = rows[order]
+	cols = cols[order]
 	
-	return rows[order], cols[order], mask
+	mask = torch.zeros((d, d), dtype = torch.bool)
+	mask[rows, cols] = True
+	return rows, cols, mask
 
 ###############################################################################

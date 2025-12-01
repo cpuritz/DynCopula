@@ -4,7 +4,7 @@
 \alias{fit_dynamic_gaussian}
 \title{Fit a dynamic Gaussian copula model}
 \usage{
-fit_dynamic_gaussian(NX, x, x0, h, control = list(), cores = 1L)
+fit_dynamic_gaussian(NX, x, x0, h, degree = 0L, control = list(), cores = 1L)
 }
 \arguments{
 \item{NX}{Matrix of normal-transformed pseudo-observations at time points.}
@@ -15,6 +15,8 @@ Must be sorted and have no duplicates.}
 \item{x0}{Time points to estimate copula parameters at.}
 
 \item{h}{Kernel bandwidth. Must satisfy \code{0 < h < 1}.}
+
+\item{degree}{Degree of local polynomial approximation. Default is \code{0}.}
 
 \item{control}{A \code{list} of control parameters for optimization.}
 

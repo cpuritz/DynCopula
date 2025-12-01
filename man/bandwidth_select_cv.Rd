@@ -4,7 +4,15 @@
 \alias{bandwidth_select_cv}
 \title{Bandwidth selection for a dynamic Gaussian copula model}
 \usage{
-bandwidth_select_cv(NX, x, bandwidths, xind, control = list(), cores = 1L)
+bandwidth_select_cv(
+  NX,
+  x,
+  bandwidths,
+  xind,
+  degree = 0L,
+  control = list(),
+  cores = 1L
+)
 }
 \arguments{
 \item{NX}{Matrix of normal-transformed pseudo-observations at time points.}
@@ -15,6 +23,8 @@ Must be sorted and have no duplicates.}
 \item{bandwidths}{Vector of kernel bandwidths to test.}
 
 \item{xind}{Number of points for LOOCV.}
+
+\item{degree}{Degree of local polynomial approximation. Default is \code{0}.}
 
 \item{control}{A \code{list} of control parameters for optimization.}
 
