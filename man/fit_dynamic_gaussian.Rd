@@ -4,13 +4,12 @@
 \alias{fit_dynamic_gaussian}
 \title{Fit a dynamic Gaussian copula model}
 \usage{
-fit_dynamic_gaussian(NX, x, x0, h, degree = 0L, control = list(), cores = 1L)
+fit_dynamic_gaussian(FX, x, x0, h, degree = 0L, control = list(), cores = 1L)
 }
 \arguments{
-\item{NX}{Matrix of normal-transformed pseudo-observations at covariate
-values.}
+\item{FX}{Matrix of pseudo-observations at covariate values.}
 
-\item{x}{Vector of covariate values corresponding to \code{NX}. Must be
+\item{x}{Vector of covariate values corresponding to \code{FX}. Must be
 sorted and have no duplicates.}
 
 \item{x0}{Covariate values to estimate copula parameters at.}
@@ -30,7 +29,7 @@ A list with the following components:
   \item \code{x}: The input argument \code{x}.
   \item \code{x0}: The input argument \code{x0}.
   \item \code{h}: The input argument \code{h}.
-  \item \code{NX}: The input argument \code{NX}.
+  \item \code{NX}: Normal-transformed pseudo-observations.
   \item \code{eta}: Matrix of estimated calibration coefficients.
   \item \code{rho}: Matrix of estimated pairwise correlation coefficients.
 }

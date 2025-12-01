@@ -63,15 +63,13 @@ fit_dyn_corr <- function(sce,
     pseudotimes <- sce_mc[[dyn_corr$time_col]]
     t0 <- sort(pseudotimes)
 
-    FX <- dyn_corr$FX
-    FXm <- dyn_corr$FXm
-    V <- dyn_corr$V
-    NX <- stats::qnorm(FXm + (FX - FXm) * V)
+    # Construct jittered pseudo-observations
+    FX <- dyn_corr$FXm + (dyn_corr$FX - dyn_corr$FXm) * dyn_corr$V
 
     if (length(bandwidth) == 1) {
         message("Estimating correlation coefficients")
         res <- fit_dynamic_gaussian(
-            NX = NX,
+            FX = FX,
             x = pseudotimes,
             x0 = t0,
             h = bandwidth,
@@ -88,7 +86,7 @@ fit_dyn_corr <- function(sce,
 
         message("Performing cross validation to select bandwidth")
         cv <- bandwidth_select(
-            NX = NX,
+            FX = FX,
             x = pseudotimes,
             bandwidths = bandwidth,
             xind = ncv,
@@ -99,7 +97,7 @@ fit_dyn_corr <- function(sce,
 
         message("Estimating correlation coefficients")
         res <- fit_dynamic_gaussian(
-            NX = NX,
+            FX = FX,
             x = pseudotimes,
             x0 = t0,
             h = h_opt,

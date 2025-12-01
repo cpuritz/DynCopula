@@ -5,7 +5,7 @@
 \title{Bandwidth selection for a dynamic Gaussian copula model}
 \usage{
 bandwidth_select(
-  NX,
+  FX,
   x,
   bandwidths,
   xind = length(x),
@@ -15,10 +15,9 @@ bandwidth_select(
 )
 }
 \arguments{
-\item{NX}{Matrix of normal-transformed pseudo-observations at covariate
-values.}
+\item{FX}{Matrix of pseudo-observations at covariate values.}
 
-\item{x}{Vector of covariate values corresponding to \code{NX}. Must be
+\item{x}{Vector of covariate values corresponding to \code{FX}. Must be
 sorted and have no duplicates.}
 
 \item{bandwidths}{Vector of kernel bandwidths to test.}

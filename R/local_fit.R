@@ -4,9 +4,8 @@
 #'
 #' @description Fit a dynamic Gaussian copula model.
 #'
-#' @param NX Matrix of normal-transformed pseudo-observations at covariate
-#' values.
-#' @param x Vector of covariate values corresponding to \code{NX}. Must be
+#' @param FX Matrix of pseudo-observations at covariate values.
+#' @param x Vector of covariate values corresponding to \code{FX}. Must be
 #' sorted and have no duplicates.
 #' @param x0 Covariate values to estimate copula parameters at.
 #' @param h Kernel bandwidth. Must satisfy \code{0 < h < 1}.
@@ -35,13 +34,13 @@
 #'   \item \code{x}: The input argument \code{x}.
 #'   \item \code{x0}: The input argument \code{x0}.
 #'   \item \code{h}: The input argument \code{h}.
-#'   \item \code{NX}: The input argument \code{NX}.
+#'   \item \code{NX}: Normal-transformed pseudo-observations.
 #'   \item \code{eta}: Matrix of estimated calibration coefficients.
 #'   \item \code{rho}: Matrix of estimated pairwise correlation coefficients.
 #' }
 #'
 #' @export
-fit_dynamic_gaussian <- function(NX,
+fit_dynamic_gaussian <- function(FX,
                                  x,
                                  x0,
                                  h,
@@ -51,8 +50,8 @@ fit_dynamic_gaussian <- function(NX,
     # Basic checks
     assert_that(
         is.vector(x, mode = "numeric"),
-        is.numeric(NX) && is.matrix(NX),
-        dim(NX)[1] == length(x),
+        is.numeric(FX) && is.matrix(FX),
+        dim(FX)[1] == length(x),
         is.numeric(h) && h > 0 && h < 1,
         is.numeric(cores) && cores >= 1,
         is.list(control),
@@ -90,6 +89,9 @@ fit_dynamic_gaussian <- function(NX,
     dx <- x[length(x)] - min_x
     x <- (x - min_x) / dx
     x0 <- (x0 - min_x) / dx
+
+    # Normal-transform pseudo-observations
+    NX <- stats::qnorm(FX)
 
     if (cores > 1L) {
         # Set up futures plan
@@ -180,7 +182,7 @@ fit_dynamic_gaussian <- function(NX,
     }))
 
     # Ensure consistent shape of Rhat across all dimensions
-    d <- dim(NX)[2]
+    d <- dim(FX)[2]
     if (d == 2) {
         Rhat <- t(Rhat)
     }
@@ -213,9 +215,8 @@ fit_dynamic_gaussian <- function(NX,
 #' @description Select the optimal kernel bandwidth for a dynamic Gaussian
 #' copula model using leave-one-out cross validation (LOOCV).
 #'
-#' @param NX Matrix of normal-transformed pseudo-observations at covariate
-#' values.
-#' @param x Vector of covariate values corresponding to \code{NX}. Must be
+#' @param FX Matrix of pseudo-observations at covariate values.
+#' @param x Vector of covariate values corresponding to \code{FX}. Must be
 #' sorted and have no duplicates.
 #' @param bandwidths Vector of kernel bandwidths to test.
 #' @param xind Number of covariate values to use for LOOCV. Default is
@@ -242,7 +243,7 @@ fit_dynamic_gaussian <- function(NX,
 #' criterion at each bandwidth value.
 #'
 #' @export
-bandwidth_select <- function(NX,
+bandwidth_select <- function(FX,
                              x,
                              bandwidths,
                              xind = length(x),
@@ -251,8 +252,8 @@ bandwidth_select <- function(NX,
                              cores = 1L) {
     assert_that(
         is.vector(x, mode = "numeric"),
-        is.numeric(NX) && is.matrix(NX),
-        dim(NX)[1] == length(x),
+        is.numeric(FX) && is.matrix(FX),
+        dim(FX)[1] == length(x),
         is.numeric(bandwidths) && all(bandwidths > 0) && all(bandwidths < 1),
         !anyDuplicated(x),
         is.numeric(xind) && xind > 1,
@@ -267,15 +268,16 @@ bandwidth_select <- function(NX,
         xind <- unique(floor(seq(1, length(x), length.out = xind)))
     }
 
-    # Log-likelihood of eta given Y under a Gaussian copula model
-    loglik <- function(Y, eta) {
+    # Log-likelihood of eta given X under a Gaussian copula model
+    loglik <- function(X, eta) {
+        NX <- stats::qnorm(X)
         copula_ll <- mvtnorm::dmvnorm(
-            x = Y,
+            x = NX,
             sigma = vec2cor(eta),
             log = TRUE,
             checkSymmetry = FALSE
         )
-        margin_ll <- sum(stats::dnorm(Y, log = TRUE))
+        margin_ll <- sum(stats::dnorm(NX, log = TRUE))
         return(copula_ll - margin_ll)
     }
 
@@ -300,7 +302,7 @@ bandwidth_select <- function(NX,
                         # Estimate calibration coefficients when leaving out
                         # observation at ix
                         eta <- fit_dynamic_gaussian(
-                            NX = NX[-ix, ],
+                            FX = FX[-ix, ],
                             x = x[-ix],
                             x0 = x[ix],
                             h = h,
@@ -309,7 +311,7 @@ bandwidth_select <- function(NX,
                         )$eta
                         # Log-likelihood of estimated calibration coefficients
                         # at observation ix
-                        ll <- loglik(NX[ix, ], as.vector(eta))
+                        ll <- loglik(FX[ix, ], as.vector(eta))
                         pbar()
                         return(ll)
                     },
@@ -332,7 +334,7 @@ bandwidth_select <- function(NX,
                         # Estimate calibration coefficients when leaving out
                         # observation at ix
                         eta <- fit_dynamic_gaussian(
-                            NX = NX[-ix, ],
+                            FX = FX[-ix, ],
                             x = x[-ix],
                             x0 = x[ix],
                             h = h,
@@ -341,7 +343,7 @@ bandwidth_select <- function(NX,
                         )$eta
                         # Log-likelihood of estimated calibration coefficients
                         # at observation ix
-                        ll <- loglik(NX[ix, ], as.vector(eta))
+                        ll <- loglik(FX[ix, ], as.vector(eta))
                         pbar()
                         return(ll)
                     }
