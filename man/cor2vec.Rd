@@ -16,7 +16,3 @@ A vector of length \code{choose(d, 2)}.
 Convert a correlation matrix to an unconstrained vector. This is
 the inverse of \link[DynCopula]{vec2cor}.
 }
-\details{
-For numerical stability, the maximum magnitude of correlation
-coefficients is capped at \code{1 - 1e-4}.
-}

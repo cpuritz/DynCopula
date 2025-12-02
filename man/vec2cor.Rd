@@ -16,7 +16,3 @@ A \code{d}x\code{d} correlation matrix.
 Convert an unconstrained vector to a correlation matrix. This is
 the inverse of \link[DynCopula]{cor2vec}.
 }
-\details{
-For numerical stability, the maximum magnitude of correlation
-coefficients is capped at \code{1 - 1e-4}.
-}

@@ -9,14 +9,9 @@
 #'
 #' @returns A vector of length \code{choose(d, 2)}.
 #'
-#' @details For numerical stability, the maximum magnitude of correlation
-#' coefficients is capped at \code{1 - 1e-4}.
-#'
 #' @export
 cor2vec <- function(R) {
     scale <- 0.5
-    rho_max <- 1 - 1e-4
-    eps <- 1e-12
 
     d <- dim(R)[1]
 
@@ -35,9 +30,7 @@ cor2vec <- function(R) {
 
     # Map to an unconstrained vector in R^(choose(d, 2))
     vH <- H[lower.tri(H)]
-    vH_overflow <- (abs(vH) > rho_max)
-    vH[vH_overflow] <- sign(vH[vH_overflow]) * (rho_max - eps)
-    vH <- (1 / scale) * atanh(vH / rho_max)
+    vH <- (1 / scale) * atanh(vH)
     return(vH)
 }
 
@@ -52,20 +45,16 @@ cor2vec <- function(R) {
 #'
 #' @returns A \code{d}x\code{d} correlation matrix.
 #'
-#' @details For numerical stability, the maximum magnitude of correlation
-#' coefficients is capped at \code{1 - 1e-4}.
-#'
 #' @export
 vec2cor <- function(v) {
     scale <- 0.5
-    rho_max <- 1 - 1e-4
 
     d <- as.integer((1 + sqrt(1 + 8 * length(v))) / 2)
 
     # Map unconstrained vector to d x d matrix with entries in (-1, 1)
     H <- matrix(0, nrow = d, ncol = d)
     diag(H) <- 1
-    H[lower.tri(H)] <- rho_max * tanh(scale * v)
+    H[lower.tri(H)] <- tanh(scale * v)
 
     # Map back to Cholesky factor space
     for (i in 2:d) {

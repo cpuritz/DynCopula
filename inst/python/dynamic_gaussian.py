@@ -198,7 +198,6 @@ def _log_mvn_density(
 
 def _vec2chol(
     V: torch.Tensor,
-    rho_max: float = 0.9999,
     scale: float = 0.5
 ) -> torch.Tensor:
     """
@@ -208,8 +207,6 @@ def _vec2chol(
     ----------
     V : torch.Tensor
         Either of shape `(npar,)` or `(npar, N)`.
-    rho_max : float, optional
-        Maximum allowed magnitude for off-diagonal correlations.
     scale : float, optional
 		Scaling factor to control steepness of `tanh` transformation.
 
@@ -233,7 +230,7 @@ def _vec2chol(
     H = torch.eye(d, dtype = torch.float64).expand(nbatch, d, d).clone()
 
     # Fill strictly lower triangular entries
-    H[:, r, c] = rho_max * torch.tanh(scale * V.T)
+    H[:, r, c] = torch.tanh(scale * V.T)
 
     # Compute cumulative product term
     X = H[:, :, :-1].pow(2).clamp_max(1 - torch.finfo(torch.float64).eps)
