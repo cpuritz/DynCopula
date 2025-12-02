@@ -50,8 +50,10 @@ fit_dynamic_gaussian <- function(FX,
     # Basic checks
     assert_that(
         is.vector(x, mode = "numeric"),
-        is.numeric(FX) && is.matrix(FX),
+        is.matrix(FX),
+        is.numeric(FX),
         dim(FX)[1] == length(x),
+        dim(FX)[2] > 1L,
         is.numeric(h) && h > 0 && h < 1,
         is.numeric(cores) && cores >= 1,
         is.list(control),
@@ -72,17 +74,19 @@ fit_dynamic_gaussian <- function(FX,
     )
     control <- utils::modifyList(defaults, control)
     assert_that(all(names(control) %in% names(defaults)))
-    control$max_itr <- as.integer(control$max_itr)
 
     # Verify control parameters
     assert_that(
         all(sapply(control, is.numeric)),
-        control$max_outer >= 1L,
-        control$max_itr >= 1L,
-        control$history_size >= 1L,
+        control$max_outer >= 1,
+        control$max_itr >= 1,
+        control$history_size >= 1,
         control$tolerance_grad > 0,
         control$tolerance_change > 0
     )
+    control$max_outer <- as.integer(control$max_outer)
+    control$max_itr <- as.integer(control$max_itr)
+    control$history_size <- as.integer(control$history_size)
 
     # Scale covariates to [0, 1]
     min_x <- x[1]
@@ -254,7 +258,8 @@ bandwidth_select <- function(FX,
                              cores = 1L) {
     assert_that(
         is.vector(x, mode = "numeric"),
-        is.numeric(FX) && is.matrix(FX),
+        is.matrix(FX),
+        is.numeric(FX),
         dim(FX)[1] == length(x),
         is.numeric(bandwidths) && all(bandwidths > 0) && all(bandwidths < 1),
         !anyDuplicated(x),
