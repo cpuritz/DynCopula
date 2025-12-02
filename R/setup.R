@@ -1,39 +1,36 @@
 ###############################################################################
 
-#' Setup a SingleCellExperiment
+#' Setup a SingleCellExperiment for analysis
 #'
-#' @description Setup a \code{SingleCellExperiment} by adding necessary metadata.
+#' @description Setup a \code{SingleCellExperiment} for analysis by adding
+#' necessary metadata.
 #'
 #' @param sce A \code{SingleCellExperiment}.
-#' @param time_col The name of the column containing pseudotimes.
-#' @param features Genes to use. If \code{NULL} (the default), all genes in the
-#' selected assay are used.
-#' @param assay The assay to use. Default is \code{"counts"}.
+#' @param time_col The name of the \code{colData} column containing pseudotimes.
+#' @param features Which genes to model. Default is all genes.
 #' @param cores The number of cores to use for parallel computations. Default
 #' is \code{1L}.
 #'
 #' @returns The same \code{SingleCellExperiment} as was passed as input, but
-#' modified to include a named metadata entry \code{dyn_corr}. This entry is a
-#' list recording \code{time_col}, \code{features}, \code{assay}, and
-#' \code{cores}.
+#' modified to include a named metadata entry \code{dyn_corr} that is used to
+#' store all information related to this analysis.
 #'
 #' @export
 setup <- function(sce,
                   time_col,
-                  features = NULL,
-                  assay = "counts",
+                  features = rownames(sce),
                   cores = 1L) {
     assert_that(
         methods::is(sce, "SingleCellExperiment"),
         time_col %in% colnames(SummarizedExperiment::colData(sce)),
         is.null(features) || is.character(features),
-        is.character(assay) && assay %in% SummarizedExperiment::assayNames(sce),
-        is.numeric(cores) && cores >= 1L
+        is.numeric(cores) && cores >= 1L,
+        all(features %in% rownames(sce))
     )
 
-    if (is.null(features)) {
-        features <- rownames(SummarizedExperiment::assay(sce, assay))
-    }
+    # Only allow use of counts assay
+    assay <- "counts"
+    assert_that(assay %in% SummarizedExperiment::assayNames(sce))
 
     metadata(sce)$dyn_corr <- list(
         time_col = time_col,

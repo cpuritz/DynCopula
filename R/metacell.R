@@ -3,7 +3,7 @@
 #' Bin a vector
 #'
 #' @description Construct a sequence of bins for a vector with a maximum bin
-#' width and a desired number of points per bin.
+#' width and a target number of points per bin.
 #'
 #' @param x Vector of points.
 #' @param N Target number of points per bin.
@@ -106,13 +106,16 @@
 #' target number of cells per bin, but the number of cells per bin may be
 #' smaller or larger. \code{max_width} sets an upper bound on the width of each
 #' bin. Each bin forms a single metacell. The raw transcript counts for cells in
-#' a single bin are summed to form the metacell's counts.
+#' a single bin are summed to form the metacell's counts. Pseudotimes are
+#' assigned to metacells based on \code{agg}. The default is to use the average
+#' pseudotime for all cells in a bin. Other options are to use the minimum,
+#' maximum, or median pseudotime.
 #'
 #' @export
 generate_metacells <- function(sce,
                                N,
                                max_width,
-                               agg = c("mean", "min", "max")) {
+                               agg = c("mean", "median", "min", "max")) {
     assert_that(
         methods::is(sce, "SingleCellExperiment"),
         "dyn_corr" %in% names(metadata(sce)),

@@ -1,13 +1,13 @@
 ###############################################################################
 
-#' Initial parameter guess
+#' Initial estimate of calibration coefficients
 #'
 #' @param x0 Time point to center around.
 #' @param x Vector of time points.
 #' @param NX Matrix of normal-transformed pseudo-observations.
 #' @param h Kernel bandwidth.
 #'
-#' @returns Parameter vector.
+#' @returns Vector of calibration coefficients.
 .init_par <- function(x0, x, NX, h) {
     # Use nearby points to estimate initial correlation matrix
     dx <- abs(x0 - x)

@@ -100,9 +100,11 @@ fit_dynamic_gaussian <- function(FX,
         on.exit({ future::plan(future::sequential); parallel::stopCluster(cl) },
                 add = TRUE)
 
-        # This environment stores the fit_gaussian function once it has been
-        # loaded from the Python module to avoid having to repeatedly load it.
-        # The module is loaded once on each worker.
+        # Since Python functions are not serializable, we can't load the
+        # optimization function in the global environment. Instead, the function
+        # needs to be loaded on each worker. This environment stores the
+        # function once it has been loaded to avoid having to do it multiple
+        # times on the same worker.
         .fit_env <- new.env(parent = emptyenv())
         fit_gaussian <- function(par0, x, NX, h, control, x0) {
             # Load the module if it hasn't been loaded yet

@@ -4,7 +4,7 @@
 \alias{generate_metacells}
 \title{Generate metacells}
 \usage{
-generate_metacells(sce, N, max_width, agg = c("mean", "min", "max"))
+generate_metacells(sce, N, max_width, agg = c("mean", "median", "min", "max"))
 }
 \arguments{
 \item{sce}{A SingleCellExperiment.}
@@ -32,5 +32,8 @@ Cells are first binned by their pseudotimes. \code{N} sets the
 target number of cells per bin, but the number of cells per bin may be
 smaller or larger. \code{max_width} sets an upper bound on the width of each
 bin. Each bin forms a single metacell. The raw transcript counts for cells in
-a single bin are summed to form the metacell's counts.
+a single bin are summed to form the metacell's counts. Pseudotimes are
+assigned to metacells based on \code{agg}. The default is to use the average
+pseudotime for all cells in a bin. Other options are to use the minimum,
+maximum, or median pseudotime.
 }

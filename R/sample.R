@@ -71,8 +71,8 @@ sample_cells <- function(sce,
                 type = "response",
                 data = mdat
             )
-            qfun <- paste0("q", mfun$family[1])
-            qfun <- getExportedValue("gamlss.dist", qfun)
+            # Load the correct quantile function
+            qfun <- getExportedValue("gamlss.dist", paste0("q", mfun$family[1]))
             V <- do.call(qfun, c(list(p = U[, i]), par_pred))
             pbar()
             return(V)

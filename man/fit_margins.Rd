@@ -2,7 +2,7 @@
 % Please edit documentation in R/margins.R
 \name{fit_margins}
 \alias{fit_margins}
-\title{Fit margins}
+\title{Fit marginal distributions to each gene}
 \usage{
 fit_margins(sce, family = c("NBI", "ZINBI"), mu_formula, sigma_formula)
 }
@@ -25,8 +25,8 @@ with the metadata entry \code{dyn_corr} updated to include the following
 entries:
 \itemize{
   \item \code{margins} List of marginal models.
-  \item \code{FX} Pseudo-observations.
-  \item \code{FXm} Left limits of pseudo-observations.
+  \item \code{FX} Matrix of pseudo-observations.
+  \item \code{FXm} Matrix of left limits of pseudo-observations.
   \item \code{V} Jittering matrix.
 }
 }
@@ -35,18 +35,19 @@ Fit parametric models to transcript counts for each gene.
 }
 \details{
 Multiple families and formulas can be passed, in which case the best
-fitting model is chosen across all combinations using AIC.
+fitting model is chosen across all combinations by minimizing AIC.
 
 Formulas should be written as a function of the name of the
 pseudotime column (what was passed as the argument \code{time_col} to
 \link[DynCopula]{setup}). Only the righthand side of the formula should be
-passed. For example (if the pseudotime column is named \code{"pseudotime"}):
+passed. For example, if the pseudotime column is named \code{"pseudotime"}:
 \itemize{
   \item \code{mu_formula = "1"}: mean is constant.
   \item \code{mu_formula = "pseudotime"}: mean varies linearly with
   pseudotime.
   \item \code{mu_formula = "gamlss::pb(pseudotime)"}: mean varies through a
-  P-spline with pseudotime.
+  P-spline with pseudotime. Any spline functions need to be explicitly
+  scoped.
 }
 For ZINBI models, the zero probability parameter is assumed to be constant.
 }

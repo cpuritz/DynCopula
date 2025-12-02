@@ -2,29 +2,26 @@
 % Please edit documentation in R/setup.R
 \name{setup}
 \alias{setup}
-\title{Setup a SingleCellExperiment}
+\title{Setup a SingleCellExperiment for analysis}
 \usage{
-setup(sce, time_col, features = NULL, assay = "counts", cores = 1L)
+setup(sce, time_col, features = rownames(sce), cores = 1L)
 }
 \arguments{
 \item{sce}{A \code{SingleCellExperiment}.}
 
-\item{time_col}{The name of the column containing pseudotimes.}
+\item{time_col}{The name of the \code{colData} column containing pseudotimes.}
 
-\item{features}{Genes to use. If \code{NULL} (the default), all genes in the
-selected assay are used.}
-
-\item{assay}{The assay to use. Default is \code{"counts"}.}
+\item{features}{Which genes to model. Default is all genes.}
 
 \item{cores}{The number of cores to use for parallel computations. Default
 is \code{1L}.}
 }
 \value{
 The same \code{SingleCellExperiment} as was passed as input, but
-modified to include a named metadata entry \code{dyn_corr}. This entry is a
-list recording \code{time_col}, \code{features}, \code{assay}, and
-\code{cores}.
+modified to include a named metadata entry \code{dyn_corr} that is used to
+store all information related to this analysis.
 }
 \description{
-Setup a \code{SingleCellExperiment} by adding necessary metadata.
+Setup a \code{SingleCellExperiment} for analysis by adding
+necessary metadata.
 }

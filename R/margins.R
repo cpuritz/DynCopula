@@ -7,10 +7,10 @@
 #'
 #' @param sce A \code{SingleCellExperiment}.
 #'
-#' @returns A list containing
+#' @returns A list containing:
 #' \itemize{
-#'    \item \code{FX} Pseudo-observations.
-#'    \item \code{FXm} Left limits of pseudo-observations.
+#'    \item \code{FX} Matrix of pseudo-observations.
+#'    \item \code{FXm} Matrix of left limits of pseudo-observations.
 #' }
 .pseudo_obs <- function(sce) {
     dyn_corr <- metadata(sce)$dyn_corr
@@ -30,6 +30,7 @@
         )
         par$y <- NULL
 
+        # Load the correct quantile function
         pfun <- getExportedValue("gamlss.dist", paste0("p", mfit$family[1]))
         pX <- function(x) {
             do.call(pfun, c(list(q = x), par))
@@ -38,11 +39,11 @@
         FXm <- pX(counts[, i] - 1)
 
         # Push away from boundaries of unit cube
-        eps <- 1e-10
-        FX[FX == 1] <- 1 - eps
-        FX[FX == 0] <- eps
-        FXm[FXm == 1] <- 1 - eps
-        FXm[FXm == 0] <- eps
+        eps <- 1e-12
+        FX[FX > 1 - eps] <- 1 - eps
+        FX[FX < eps] <- eps
+        FXm[FXm > 1 - eps] <- 1 - eps
+        FXm[FXm < eps] <- eps
 
         return(list(FX = FX, FXm = FXm))
     })
@@ -54,7 +55,7 @@
 
 ###############################################################################
 
-#' Fit margins
+#' Fit marginal distributions to each gene
 #'
 #' @description Fit parametric models to transcript counts for each gene.
 #'
@@ -72,24 +73,25 @@
 #' entries:
 #' \itemize{
 #'   \item \code{margins} List of marginal models.
-#'   \item \code{FX} Pseudo-observations.
-#'   \item \code{FXm} Left limits of pseudo-observations.
+#'   \item \code{FX} Matrix of pseudo-observations.
+#'   \item \code{FXm} Matrix of left limits of pseudo-observations.
 #'   \item \code{V} Jittering matrix.
 #' }
 #'
 #' @details Multiple families and formulas can be passed, in which case the best
-#' fitting model is chosen across all combinations using AIC.
+#' fitting model is chosen across all combinations by minimizing AIC.
 #'
 #' Formulas should be written as a function of the name of the
 #' pseudotime column (what was passed as the argument \code{time_col} to
 #' \link[DynCopula]{setup}). Only the righthand side of the formula should be
-#' passed. For example (if the pseudotime column is named \code{"pseudotime"}):
+#' passed. For example, if the pseudotime column is named \code{"pseudotime"}:
 #' \itemize{
 #'   \item \code{mu_formula = "1"}: mean is constant.
 #'   \item \code{mu_formula = "pseudotime"}: mean varies linearly with
 #'   pseudotime.
 #'   \item \code{mu_formula = "gamlss::pb(pseudotime)"}: mean varies through a
-#'   P-spline with pseudotime.
+#'   P-spline with pseudotime. Any spline functions need to be explicitly
+#'   scoped.
 #' }
 #' For ZINBI models, the zero probability parameter is assumed to be constant.
 #'
@@ -106,6 +108,7 @@ fit_margins <- function(sce,
     )
     family <- match.arg(family, several.ok = TRUE)
 
+    # Set up futures plan
     cores <- metadata(sce)$dyn_corr$cores
     cl <- parallel::makeCluster(cores)
     future::plan(future::cluster, workers = cl)
@@ -122,6 +125,7 @@ fit_margins <- function(sce,
     X <- Matrix::t(X[dyn_corr$features, ])
     pseudotimes <- sce[[dyn_corr$time_col]]
 
+    # All combination of families/formulas to consider
     combs <- expand.grid(
         family = family,
         mu_formula = mu_formula,
@@ -130,6 +134,7 @@ fit_margins <- function(sce,
         KEEP.OUT.ATTRS = FALSE
     )
 
+    # Parallelized with progress bar
     progressr::with_progress({
         pbar <- progressr::progressor(along = seq_len(dim(X)[2]))
 
@@ -143,6 +148,8 @@ fit_margins <- function(sce,
                     fmu <- paste("x ~", combs[i, "mu_formula"])
                     fsigma <- paste("~", combs[i, "sigma_formula"])
                     fname <- combs[i, "family"]
+
+                    # Load the gamlss family function
                     fam <- getExportedValue("gamlss.dist", fname)
                     fit <- gamlss::gamlss(
                         formula = stats::formula(fmu),
@@ -155,11 +162,12 @@ fit_margins <- function(sce,
                     fit$call$family <- as.name(fname)
                     return(fit)
                 })
+                # Select the model which minimizes AIC
                 best_ix <- which.min(sapply(models, '[[', "aic"))
                 pbar()
                 return(models[[best_ix]])
             },
-            future.globals = c("combs", "pbar", "pseudotimes"),
+            future.globals = TRUE,
             future.seed = TRUE,
             future.packages = c("gamlss.dist")
         )
@@ -168,12 +176,14 @@ fit_margins <- function(sce,
     names(margins) <- colnames(X)
     metadata(sce)$dyn_corr$margins <- margins
 
+    # Compute jittered pseudo-observations
     pobs <- .pseudo_obs(sce)
     FX <- pobs$FX
     FXm <- pobs$FXm
     V <- matrix(stats::runif(prod(dim(FX))), nrow = nrow(FX))
     FXj <- FXm + (FX - FXm) * V
 
+    # Save the pseudo-observations and jittering matrix separately
     metadata(sce)$dyn_corr$FX <- FX
     metadata(sce)$dyn_corr$FXm <- FXm
     metadata(sce)$dyn_corr$V <- V
@@ -183,7 +193,7 @@ fit_margins <- function(sce,
 
 ###############################################################################
 
-#' Fit metacell margins
+#' Fit marginal distributions to each gene for metacells
 #'
 #' @description Fit parametric models to metacell transcript counts for each
 #' gene.
@@ -198,21 +208,22 @@ fit_margins <- function(sce,
 #' dispersion parameter.
 #'
 #' @returns The same \code{SingleCellExperiment} as was passed as input, but
-#' with the metacell \code{SingleCellExperiment} updated.
+#' with the embedded metacell \code{SingleCellExperiment} updated.
 #'
 #' @details Multiple families and formulas can be passed, in which case the best
-#' fitting model is chosen across all combinations using AIC.
+#' fitting model is chosen across all combinations by minimizing AIC.
 #'
 #' Formulas should be written as a function of the name of the
 #' pseudotime column (what was passed as the argument \code{time_col} to
 #' \link[DynCopula]{setup}). Only the righthand side of the formula should be
-#' passed. For example (if the pseudotime column is named \code{"pseudotime"}):
+#' passed. For example, if the pseudotime column is named \code{"pseudotime"}:
 #' \itemize{
 #'   \item \code{mu_formula = "1"}: mean is constant.
 #'   \item \code{mu_formula = "pseudotime"}: mean varies linearly with
 #'   pseudotime.
 #'   \item \code{mu_formula = "gamlss::pb(pseudotime)"}: mean varies through a
-#'   P-spline with pseudotime.
+#'   P-spline with pseudotime. Any spline functions need to be explicitly
+#'   scoped.
 #' }
 #' For ZINBI models, the zero probability parameter is assumed to be constant.
 #'
@@ -230,6 +241,7 @@ fit_metacell_margins <- function(sce,
     )
     family <- match.arg(family, several.ok = TRUE)
 
+    # Set up futures plan
     cores <- metadata(sce)$dyn_corr$cores
     cl <- parallel::makeCluster(cores)
     future::plan(future::cluster, workers = cl)
@@ -248,6 +260,7 @@ fit_metacell_margins <- function(sce,
     X <- Matrix::t(X[dyn_corr$features, ])
     pseudotimes <- mc_sce[[dyn_corr$time_col]]
 
+    # All combination of families/formulas to consider
     combs <- expand.grid(
         family = family,
         mu_formula = mu_formula,
@@ -256,6 +269,7 @@ fit_metacell_margins <- function(sce,
         KEEP.OUT.ATTRS = FALSE
     )
 
+    # Parallelized with progress bar
     progressr::with_progress({
         pbar <- progressr::progressor(along = seq_len(dim(X)[2]))
 
@@ -269,6 +283,8 @@ fit_metacell_margins <- function(sce,
                     fmu <- paste("x ~", combs[i, "mu_formula"])
                     fsigma <- paste("~", combs[i, "sigma_formula"])
                     fname <- combs[i, "family"]
+
+                    # Load the gamlss family function
                     fam <- getExportedValue("gamlss.dist", fname)
                     fit <- gamlss::gamlss(
                         formula = stats::formula(fmu),
@@ -281,11 +297,12 @@ fit_metacell_margins <- function(sce,
                     fit$call$family <- as.name(fname)
                     return(fit)
                 })
+                # Select the model which minimizes AIC
                 best_ix <- which.min(sapply(models, '[[', "aic"))
                 pbar()
                 return(models[[best_ix]])
             },
-            future.globals = c("combs", "pbar", "pseudotimes"),
+            future.globals = TRUE,
             future.seed = TRUE,
             future.packages = c("gamlss.dist")
         )
@@ -294,12 +311,14 @@ fit_metacell_margins <- function(sce,
     names(margins) <- colnames(X)
     metadata(mc_sce)$dyn_corr$margins <- margins
 
+    # Compute jittered pseudo-observations
     pobs <- .pseudo_obs(mc_sce)
     FX <- pobs$FX
     FXm <- pobs$FXm
     V <- matrix(stats::runif(prod(dim(FX))), nrow = nrow(FX))
     FXj <- FXm + (FX - FXm) * V
 
+    # Save the pseudo-observations and jittering matrix separately
     metadata(mc_sce)$dyn_corr$FX <- FX
     metadata(mc_sce)$dyn_corr$FXm <- FXm
     metadata(mc_sce)$dyn_corr$V <- V

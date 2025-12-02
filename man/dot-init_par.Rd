@@ -2,7 +2,7 @@
 % Please edit documentation in R/init_par.R
 \name{.init_par}
 \alias{.init_par}
-\title{Initial parameter guess}
+\title{Initial estimate of calibration coefficients}
 \usage{
 .init_par(x0, x, NX, h)
 }
@@ -16,8 +16,8 @@
 \item{h}{Kernel bandwidth.}
 }
 \value{
-Parameter vector.
+Vector of calibration coefficients.
 }
 \description{
-Initial parameter guess
+Initial estimate of calibration coefficients
 }

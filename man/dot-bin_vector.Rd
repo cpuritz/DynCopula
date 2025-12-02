@@ -16,7 +16,7 @@
 }
 \description{
 Construct a sequence of bins for a vector with a maximum bin
-width and a desired number of points per bin.
+width and a target number of points per bin.
 }
 \details{
 \code{max_width} is a strict upper bound on the width of each bin.

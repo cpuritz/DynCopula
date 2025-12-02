@@ -10,10 +10,10 @@
 \item{sce}{A \code{SingleCellExperiment}.}
 }
 \value{
-A list containing
+A list containing:
 \itemize{
-   \item \code{FX} Pseudo-observations.
-   \item \code{FXm} Left limits of pseudo-observations.
+   \item \code{FX} Matrix of pseudo-observations.
+   \item \code{FXm} Matrix of left limits of pseudo-observations.
 }
 }
 \description{
