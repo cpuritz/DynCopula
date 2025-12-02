@@ -34,6 +34,12 @@
 #'   Default is \code{1e-9}.
 #' }
 #'
+#' The argument \code{ncv} specifies the number of pseudotime values to use for
+#' leave-one-out cross validation (LOOCV). If \code{ncv} is less than the
+#' number of metacells (each of which is assigned a unique pseudotime value),
+#' then only a subset of the pseudotime values are used. This reduces run time
+#' but is only an estimate of full LOOCV.
+#'
 #' @returns The same \code{SingleCellExperiment} as was passed as input, but
 #' with the metadata entry \code{dyn_corr} updated to include the following
 #' elements:
@@ -82,7 +88,10 @@ fit_dyn_corr <- function(sce,
             ncv <- length(pseudotimes)
         } else {
             ncv <- as.integer(ncv)
-            assertthat::assert_that(ncv > 0 && ncv <= length(pseudotimes))
+            assert_that(ncv > 1)
+            if (ncv > length(pseudotimes)) {
+                ncv <- length(pseudotimes)
+            }
         }
 
         message("Performing cross validation to select bandwidth")
@@ -96,7 +105,7 @@ fit_dyn_corr <- function(sce,
         )
         h_opt <- cv$bandwidth[which.max(cv$cv)]
 
-        message("Estimating correlation coefficients")
+        message("Estimating correlation coefficients using optimal bandwidth")
         res <- fit_dynamic_gaussian(
             FX = FX,
             x = pseudotimes,

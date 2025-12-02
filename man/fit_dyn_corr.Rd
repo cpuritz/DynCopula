@@ -53,4 +53,10 @@ parameters can be supplied:
   \item \code{tolerance_change} Termination tolerance for log-likelihood.
   Default is \code{1e-9}.
 }
+
+The argument \code{ncv} specifies the number of pseudotime values to use for
+leave-one-out cross validation (LOOCV). If \code{ncv} is less than the
+number of metacells (each of which is assigned a unique pseudotime value),
+then only a subset of the pseudotime values are used. This reduces run time
+but is only an estimate of full LOOCV.
 }
