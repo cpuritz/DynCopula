@@ -58,7 +58,9 @@ fit_dyn_corr <- function(sce,
         methods::is(sce, "SingleCellExperiment"),
         "dyn_corr" %in% names(metadata(sce)),
         "metacell_sce" %in% names(metadata(sce)$dyn_corr),
-        is.null(ncv) || is.numeric(ncv)
+        is.numeric(bandwidth) && bandwidth > 0 && bandwidth < 1,
+        is.list(control),
+        is.null(ncv) || (is.numeric(ncv) && ncv > 1)
     )
 
     sce_mc <- metadata(sce)$dyn_corr$metacell_sce
@@ -88,7 +90,6 @@ fit_dyn_corr <- function(sce,
             ncv <- length(pseudotimes)
         } else {
             ncv <- as.integer(ncv)
-            assert_that(ncv > 1)
             if (ncv > length(pseudotimes)) {
                 ncv <- length(pseudotimes)
             }
