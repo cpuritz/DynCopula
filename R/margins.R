@@ -313,16 +313,18 @@ fit_metacell_margins <- function(sce,
 
     # Compute jittered pseudo-observations
     pobs <- .pseudo_obs(mc_sce)
-    FX <- pobs$FX
-    FXm <- pobs$FXm
-    V <- matrix(stats::runif(prod(dim(FX))), nrow = nrow(FX))
-    FXj <- FXm + (FX - FXm) * V
+    metadata(mc_sce)$dyn_corr$FX <- pobs$FX
+    metadata(mc_sce)$dyn_corr$FXm <- pobs$FXm
+    metadata(mc_sce)$dyn_corr$V <-
+        matrix(stats::runif(prod(dim(pobs$FX))), nrow = nrow(pobs$FX))
 
-    # Save the pseudo-observations and jittering matrix separately
-    metadata(mc_sce)$dyn_corr$FX <- FX
-    metadata(mc_sce)$dyn_corr$FXm <- FXm
-    metadata(mc_sce)$dyn_corr$V <- V
+    # The metacell margins are never needed again. The only time margins are
+    # needed again is when we sample cells, but that is done using the cell
+    # margins and not the metacell margins. 'margins' is a large object, so
+    # we will not save it.
+    metadata(mc_sce)$dyn_corr$margins <- NULL
 
+    # Save the metacell sce in the original sce
     metadata(sce)$dyn_corr$metacell_sce <- mc_sce
     return(sce)
 }
