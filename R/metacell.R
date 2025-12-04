@@ -35,6 +35,7 @@
 
         # Target number of points to allocate to the bin
         target <- as.integer(remaining / bins_left)
+        # Ensure target is somewhat close to N
         lo <- max(1L, as.integer(floor(0.5 * N)))
         hi <- as.integer(ceiling(1.5 * N))
         target <- max(lo, min(hi, target))
@@ -71,16 +72,13 @@
         }
     }
 
-    # Ensure last cut-point is exactly 1
+    # Ensure last cut point is exactly 1
     cuts[length(cuts)] <- 1
 
     # Rescale cut points to original length scale
     cuts <- (max_x - min_x) * cuts + min_x
 
-    # Counts per bin
-    counts <- sapply(bins, function(b) { b[2] - b[1] + 1 })
-
-    return(list(cut_points = cuts, counts = counts))
+    return(cuts)
 }
 
 ###############################################################################
@@ -125,14 +123,11 @@ generate_metacells <- function(sce,
     N <- as.integer(N)
     agg <- getExportedValue("base", match.arg(agg))
 
-    # Get cut points for binning
-    times <- sce[[metadata(sce)$dyn_corr$time_col]]
-    bins <- .bin_vector(times, N, max_width)
-
     # Bin pseudotimes
+    times <- sce[[metadata(sce)$dyn_corr$time_col]]
     intervals <- cut(
         x = times,
-        breaks = unique(bins$cut_points),
+        breaks = .bin_vector(times, N, max_width),
         include.lowest = TRUE,
         right = TRUE,
         labels = FALSE
