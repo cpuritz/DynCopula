@@ -47,10 +47,10 @@
 
         return(list(FX = FX, FXm = FXm))
     })
-    return(list(
-        FX = do.call(cbind, lapply(pobs, '[[', "FX")),
-        FXm = do.call(cbind, lapply(pobs, '[[', "FXm"))
-    ))
+
+    FX <- do.call(cbind, lapply(pobs, '[[', "FX"))
+    FXm <- do.call(cbind, lapply(pobs, '[[', "FXm"))
+    return(list(FX = FX, FXm = FXm))
 }
 
 ###############################################################################
@@ -108,6 +108,8 @@ fit_margins <- function(sce,
     )
     family <- match.arg(family, several.ok = TRUE)
 
+    message("Fitting marginal distributions")
+
     # Set up futures plan
     cores <- metadata(sce)$dyn_corr$cores
     cl <- parallel::makeCluster(cores)
@@ -115,7 +117,7 @@ fit_margins <- function(sce,
     on.exit({ future::plan(future::sequential); parallel::stopCluster(cl) },
             add = TRUE)
 
-    message("Fitting marginal distributions")
+    # Save information on margins to metadata
     metadata(sce)$dyn_corr$family <- family
     metadata(sce)$dyn_corr$mu_formula <- mu_formula
     metadata(sce)$dyn_corr$sigma_formula <- sigma_formula
@@ -137,10 +139,9 @@ fit_margins <- function(sce,
     # Parallelized with progress bar
     progressr::with_progress({
         pbar <- progressr::progressor(along = seq_len(dim(X)[2]))
-
-        X_slices <- apply(X, 2, c, simplify = FALSE)
-        margins <- future.apply::future_lapply(
-            X = X_slices,
+        margins <- future.apply::future_apply(
+            X = X,
+            MARGIN = 2,
             FUN = function(x) {
                 ddata <- data.frame(x, pseudotimes)
                 names(ddata) <- c("x", dyn_corr$time_col)
@@ -272,10 +273,9 @@ fit_metacell_margins <- function(sce,
     # Parallelized with progress bar
     progressr::with_progress({
         pbar <- progressr::progressor(along = seq_len(dim(X)[2]))
-
-        X_slices <- apply(X, 2, c, simplify = FALSE)
-        margins <- future.apply::future_lapply(
-            X = X_slices,
+        margins <- future.apply::future_apply(
+            X = X,
+            MARGIN = 2,
             FUN = function(x) {
                 ddata <- data.frame(x, pseudotimes)
                 names(ddata) <- c("x", dyn_corr$time_col)
