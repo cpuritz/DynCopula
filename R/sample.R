@@ -10,8 +10,7 @@
 #' @returns A \code{SingleCellExperiment}.
 #'
 #' @export
-sample_cells <- function(sce,
-                         times) {
+sample_cells <- function(sce, times) {
     assert_that(
         methods::is(sce, "SingleCellExperiment"),
         "dyn_corr" %in% names(metadata(sce)),
