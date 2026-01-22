@@ -6,15 +6,16 @@
 #' likelihood.
 #'
 #' @param sce A \code{SingleCellExperiment}.
-#' @param bandwidth Kernel bandwidth. Must be between \code{0} and \code{1}. If
-#' a vector of bandwidths is passed, then cross validation is used to choose
-#' the optimal bandwidth.
+#' @param bandwidths Vector of global kernel bandwidths to test.
+#' @param variable Whether to use a variable bandwidth. Default is \code{FALSE}.
+#' @param alpha Powers to test for the variable bandwidth function. Ignored if
+#' \code{variable = FALSE}. Default is \code{seq(0, 1, 0.1)}.
+#' @param beta Scale factors to test for the variable bandwidth function.
+#' Ignored if \code{variable = FALSE}. Default is \code{seq(0.75, 1.25, 0.1)}.
 #' @param control A \code{list} of control parameters for optimization.
-#' @param ncv If multiple bandwidths are passed, leave-one-out cross validation
-#' is used to choose the optimal bandwidth. This argument specifies the number
-#' of pseudotime values to use for cross validation. If \code{NULL} (the
-#' default), all pseudotime values are used. If only a single bandwidth is
-#' passed, this parameter has no effect.
+#' @param ncv Number of pseudotime values to use for LOOCV. If \code{NULL} (the
+#' default), all pseudotime values are used.
+#' @param degree Degree of local polynomial approximation. Default is \code{0}.
 #'
 #' @details This function can only be run after
 #' \link[DynCopula]{generate_metacells} has been run.
@@ -23,22 +24,41 @@
 #' is a list that supplies control parameters for optimization. The following
 #' parameters can be supplied:
 #' \itemize{
-#'   \item \code{max_outer} Maximum number of outer iterations. Default is
+#'   \item \code{max_outer}: Maximum number of outer iterations. Default is
 #'   \code{1}.
-#'   \item \code{max_itr} Maximum number of inner iterations. Default is
+#'   \item \code{max_itr}: Maximum number of inner iterations. Default is
 #'   \code{100}.
-#'   \item \code{history_size} History size. Default is \code{30}.
-#'   \item \code{tolerance_grad} Termination tolerance for gradient. Default is
+#'   \item \code{history_size}: History size. Default is \code{30}.
+#'   \item \code{tolerance_grad}: Termination tolerance for gradient. Default is
 #'   \code{1e-7}.
-#'   \item \code{tolerance_change} Termination tolerance for log-likelihood.
+#'   \item \code{tolerance_change}: Termination tolerance for log-likelihood.
 #'   Default is \code{1e-9}.
 #' }
+#' Any control parameters not specified are assigned their default values.
 #'
-#' The argument \code{ncv} specifies the number of pseudotime values to use for
-#' leave-one-out cross validation (LOOCV). If \code{ncv} is less than the
-#' number of metacells (each of which is assigned a unique pseudotime value),
-#' then only a subset of the pseudotime values are used. This reduces run time
-#' but is only an estimate of full LOOCV.
+#' If only one global kernel bandwidth is specified, the model is fit using this
+#' value and returned. Otherwise, leave-one-out cross-validation (LOOCV) is used
+#' to select the optimal bandwidth out of the bandwidths specified. The optimal
+#' bandwidth is the one that maximizes the cross-validated likelihood criterion.
+#' The model returned uses this optimal bandwidth.
+#'
+#' If a variable bandwidth should be used (\code{variable = TRUE}), a global
+#' pilot bandwidth is first selected as discussed above. LOOCV is then used
+#' to select parameters for the variable bandwidth function from the values in
+#' \code{alpha} and \code{beta}. The variable bandwidth function is defined as
+#' \deqn{
+#' h(x;\alpha,\beta)=\beta h_{0}\big(\hat{f}_{x}(x)/G\big)^{-\alpha}
+#' }
+#' where \eqn{h_{0}} is the global pilot bandwidth, \eqn{\hat{f}_{x}} is a
+#' kernel density estimator for the covariate values, and \eqn{G} is the
+#' geometric mean of \eqn{\hat{f}_{x}(x)}.
+#'
+#' The argument \code{ncv} specifies the number of covariate values to use for
+#' LOOCV. Full LOOCV corresponds to \code{ncv = length(x)}. If
+#' \code{ncv < length(x)}, then only a subset of the covariates are used to
+#' reduce the run time. The indices of the chosen covariates are equally spaced
+#' along \code{seq_along(x)}. This is only an estimate to full LOOCV and may be
+#' quite inaccurate for \code{ncv << length(x)}.
 #'
 #' @returns The same \code{SingleCellExperiment} as was passed as input, but
 #' with the metadata entry \code{dyn_corr} updated to include the following
@@ -51,15 +71,17 @@
 #'
 #' @export
 fit_dyn_corr <- function(sce,
-                         bandwidth,
-                         control = list(),
-                         ncv = NULL) {
+                         bandwidths,
+                         variable = FALSE,
+                         alpha = seq(0, 1, 0.1),
+                         beta = seq(0.75, 1.25, 0.1),
+                         ncv = NULL,
+                         degree = 0,
+                         control = list()) {
     assert_that(
         methods::is(sce, "SingleCellExperiment"),
         "dyn_corr" %in% names(metadata(sce)),
         "metacell_sce" %in% names(metadata(sce)$dyn_corr),
-        is.numeric(bandwidth) && bandwidth > 0 && bandwidth < 1,
-        is.list(control),
         is.null(ncv) || (is.numeric(ncv) && ncv > 1)
     )
 
@@ -75,47 +97,27 @@ fit_dyn_corr <- function(sce,
     # Construct jittered pseudo-observations
     FX <- dyn_corr$FXm + (dyn_corr$FX - dyn_corr$FXm) * dyn_corr$V
 
-    if (length(bandwidth) == 1) {
-        message("Estimating correlation coefficients")
-        res <- fit_dynamic_gaussian(
-            FX = FX,
-            x = pseudotimes,
-            x0 = t0,
-            h = bandwidth,
-            control = control,
-            cores = dyn_corr$cores
-        )
+    if (is.null(ncv)) {
+        ncv <- length(pseudotimes)
     } else {
-        if (is.null(ncv)) {
+        ncv <- as.integer(ncv)
+        if (ncv > length(pseudotimes)) {
             ncv <- length(pseudotimes)
-        } else {
-            ncv <- as.integer(ncv)
-            if (ncv > length(pseudotimes)) {
-                ncv <- length(pseudotimes)
-            }
         }
-
-        message("Performing cross validation to select bandwidth")
-        cv <- bandwidth_select(
-            FX = FX,
-            x = pseudotimes,
-            bandwidths = bandwidth,
-            xind = ncv,
-            control = control,
-            cores = dyn_corr$cores
-        )
-        h_opt <- cv$bandwidth[which.max(cv$cv)]
-
-        message("Estimating correlation coefficients using optimal bandwidth")
-        res <- fit_dynamic_gaussian(
-            FX = FX,
-            x = pseudotimes,
-            x0 = t0,
-            h = h_opt,
-            control = control,
-            cores = dyn_corr$cores
-        )
     }
+
+    res <- fit_local_gaussian(
+        FX = FX,
+        x = pseudotimes,
+        bandwidths = bandwidths,
+        variable = variable,
+        alpha = alpha,
+        beta = beta,
+        ncv = ncv,
+        degree = degree,
+        control = control,
+        cores = dyn_corr$cores
+    )
 
     # Convert numeric labels to gene names
     gene_names <- sapply(colnames(res$rho), function(x) {
@@ -127,7 +129,7 @@ fit_dyn_corr <- function(sce,
 
     # Save results in metadata
     metadata(sce)$dyn_corr$rho <- res$rho
-    metadata(sce)$dyn_corr$bandwidth <- res$h
+    metadata(sce)$dyn_corr$bandwidths <- res$bandwidths
 
     return(sce)
 }
