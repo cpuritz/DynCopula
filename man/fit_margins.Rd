@@ -4,7 +4,13 @@
 \alias{fit_margins}
 \title{Fit marginal distributions to each gene}
 \usage{
-fit_margins(sce, family = c("NBI", "ZINBI"), mu_formula, sigma_formula)
+fit_margins(
+  sce,
+  family = c("NBI", "ZINBI"),
+  mu_formula,
+  sigma_formula,
+  save = FALSE
+)
 }
 \arguments{
 \item{sce}{A \code{SingleCellExperiment}.}
@@ -18,6 +24,9 @@ parameter.}
 
 \item{sigma_formula}{A character vector specifying formulas for the
 dispersion parameter.}
+
+\item{save}{Whether to save all information about margins. Default is
+\code{FALSE}.}
 }
 \value{
 The same \code{SingleCellExperiment} as was passed as input, but
@@ -50,4 +59,9 @@ passed. For example, if the pseudotime column is named \code{"pseudotime"}:
   scoped.
 }
 For ZINBI models, the zero probability parameter is assumed to be constant.
+
+If \code{save = TRUE}, all information returned by \link[gamlss]{gamlss} is
+retained. This will greatly increase the size of the returned
+\code{SingleCellExperiment}, and thus \code{save = FALSE} is the default. See
+\link[gamlss]{gamlss.control} for more details.
 }
