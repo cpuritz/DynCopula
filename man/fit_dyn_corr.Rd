@@ -6,8 +6,8 @@
 \usage{
 fit_dyn_corr(
   sce,
-  bandwidths,
-  variable = FALSE,
+  bandwidths = seq(0.01, 0.2, 0.01),
+  variable = TRUE,
   alpha = seq(0, 1, 0.1),
   beta = seq(0.75, 1.25, 0.1),
   ncv = NULL,
@@ -18,9 +18,8 @@ fit_dyn_corr(
 \arguments{
 \item{sce}{A \code{SingleCellExperiment}.}
 
-\item{bandwidths}{Vector of global kernel bandwidths to test.}
-
-\item{variable}{Whether to use a variable bandwidth. Default is \code{FALSE}.}
+\item{bandwidths}{Vector of global kernel bandwidths to test. Default is
+\code{seq(0.01, 0.20, 0.01)}.}
 
 \item{alpha}{Powers to test for the variable bandwidth function. Ignored if
 \code{variable = FALSE}. Default is \code{seq(0, 1, 0.1)}.}
@@ -69,22 +68,25 @@ parameters can be supplied:
 }
 Any control parameters not specified are assigned their default values.
 
-If only one global kernel bandwidth is specified, the model is fit using this
-value and returned. Otherwise, leave-one-out cross-validation (LOOCV) is used
-to select the optimal bandwidth out of the bandwidths specified. The optimal
-bandwidth is the one that maximizes the cross-validated likelihood criterion.
-The model returned uses this optimal bandwidth.
+Kernel bandwidth selection is performed using leave-one-out cross-validation.
+If \code{variable = FALSE}, a single global bandwidth is selected from
+\code{bandwidths}. The optimal bandwidth is the one that maximizes the
+cross-validated likelihood criterion. The model returned uses this optimal
+bandwidth.
 
-If a variable bandwidth should be used (\code{variable = TRUE}), a global
-pilot bandwidth is first selected as discussed above. LOOCV is then used
-to select parameters for the variable bandwidth function from the values in
-\code{alpha} and \code{beta}. The variable bandwidth function is defined as
+If \code{variable = TRUE}, a variable bandwidth is selected. A global pilot
+bandwidth is first selected as discussed above. LOOCV is then used to select
+parameters for the variable bandwidth function from \code{alpha} and
+\code{beta}. The variable bandwidth function is defined as
 \deqn{
 h(x;\alpha,\beta)=\beta h_{0}\big(\hat{f}_{x}(x)/G\big)^{-\alpha}
 }
 where \eqn{h_{0}} is the global pilot bandwidth, \eqn{\hat{f}_{x}} is a
-kernel density estimator for the covariate values, and \eqn{G} is the
-geometric mean of \eqn{\hat{f}_{x}(x)}.
+kernel density estimator for the density of pseudotimes, and \eqn{G} is the
+geometric mean of \eqn{\hat{f}_{x}(x)}. As long as \eqn{\alpha=0} and
+\eqn{\beta=1} are included in the parameter sets, the global bandwidth model
+is included, and thus the variable approach will perform no worse (in terms
+of cross-validated likelihood) than the global bandwidth model.
 
 The argument \code{ncv} specifies the number of covariate values to use for
 LOOCV. Full LOOCV corresponds to \code{ncv = length(x)}. If
