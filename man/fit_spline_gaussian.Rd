@@ -8,10 +8,10 @@ fit_spline_gaussian(
   FX,
   x,
   lambda,
-  lambda_blocks = 1L,
+  lambda_blocks = 1,
   df,
-  nfold = 5L,
-  cores = 1L,
+  nfold = 10,
+  cores = 1,
   control = list()
 )
 }
@@ -23,13 +23,11 @@ sorted and have no duplicates.}
 
 \item{lambda}{Vector of smoothing parameters.}
 
-\item{lambda_blocks}{Either an integer specifying the number of smoothing
-blocks, or a vector of integers specifying block assignments. Each block
-has its own smoothing parameter. Default is \code{1}.}
+\item{lambda_blocks}{Number of smoothing blocks. Default is \code{1}.}
 
 \item{df}{Vector of degrees of freedom.}
 
-\item{nfold}{Number of folds for cross-validation.}
+\item{nfold}{Number of folds for cross-validation. Default is \code{10}.}
 
 \item{cores}{Number of cores to use. Default is \code{1}.}
 
@@ -39,19 +37,22 @@ has its own smoothing parameter. Default is \code{1}.}
 A list with the following components:
 \itemize{
   \item \code{x}: The input argument \code{x}.
-  \item \code{h}: The bandwidth used at each value in \code{x0}.
+  \item \code{NX}: Normal-transformed pseudo-observations.
   \item \code{eta}: Matrix of estimated calibration coefficients.
   \item \code{rho}: Matrix of estimated pairwise correlation coefficients.
-  \item \code{cv}: Data frame of cross-validation results.
+  \item \code{lambda}: The optimal smoothing parameter.
+  \item \code{df}: The optimal degrees of freedom.
 }
 }
 \description{
-Fit a dynamic Gaussian copula model using B-splines.
+Fit a dynamic Gaussian copula model using penalized splines.
 }
 \details{
 Cross-validation is used to select the values of \code{lambda} and
-\code{df}. The number of sets of parameters evaluated is of size
-\code{len(lambda_blocks)^(lambda_blocks) * len(df)}.
+\code{df}. An initial estimate is first computed by cross-validation over all
+values of \code{lambda} and \code{df}. If \code{lambda_blocks > 1}, a second
+sweep is performed to choose block-specific smoothing parameters, with the
+parameter set of size \code{|lambda|^(lambda_blocks)}.
 
 Optimization is performed using L-BFGS. The \code{control} argument
 is a list that supplies control parameters for optimization. The following

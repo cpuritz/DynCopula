@@ -86,6 +86,14 @@ fit_local_gaussian <- function(FX,
                                degree = 0,
                                control = list(),
                                cores = 1) {
+
+    # Set up futures plan
+    assert_that(is.numeric(cores) && cores >= 1)
+    cl <- parallel::makeCluster(as.integer(cores))
+    future::plan(future::cluster, workers = cl)
+    on.exit({ future::plan(future::sequential); parallel::stopCluster(cl) },
+            add = TRUE)
+
     if (length(bandwidths) == 1L && !variable) {
         # No bandwidth selection, just need to fit model. Error checking
         # is handled by .local_fit.
@@ -96,7 +104,7 @@ fit_local_gaussian <- function(FX,
             h = bandwidths,
             degree = degree,
             control = control,
-            cores = cores
+            cl = cl
         ))
     }
 
@@ -164,12 +172,6 @@ fit_local_gaussian <- function(FX,
         return(copula_ll - margin_ll)
     }
 
-    # Set up futures plan
-    cl <- parallel::makeCluster(cores)
-    future::plan(future::cluster, workers = cl)
-    on.exit({ future::plan(future::sequential); parallel::stopCluster(cl) },
-            add = TRUE)
-
     # Since Python functions are not serializable, we can't load the
     # optimization function in the global environment. Instead, the function
     # needs to be loaded on each worker. This environment stores the
@@ -223,6 +225,7 @@ fit_local_gaussian <- function(FX,
                 future.seed = TRUE,
                 future.globals = TRUE
             )
+            ll_all <- future::value(ll_all)
             ll_all <- unlist(ll_all)
         })
         h_opt <- bandwidths[which.max(ll_all)]
@@ -256,7 +259,7 @@ fit_local_gaussian <- function(FX,
             total_par <- length(alpha) + length(beta)
             pbar <- progressr::progressor(along = seq_len(total_par))
 
-            ll_alpha <- unlist(future.apply::future_lapply(
+            ll_alpha <- future.apply::future_lapply(
                 X = alpha,
                 FUN = function(a_val) {
                     h_adapt <- get_h_adapt(a_val, 1.0)
@@ -274,10 +277,12 @@ fit_local_gaussian <- function(FX,
                 },
                 future.seed = TRUE,
                 future.globals = TRUE
-            ))
+            )
+            ll_alpha <- future::value(ll_alpha)
+            ll_alpha <- unlist(ll_alpha)
             alpha_opt <- alpha[which.max(ll_alpha)]
 
-            ll_beta <- unlist(future.apply::future_lapply(
+            ll_beta <- future.apply::future_lapply(
                 X = beta,
                 FUN = function(b_val) {
                     h_adapt <- get_h_adapt(alpha_opt, b_val)
@@ -295,7 +300,9 @@ fit_local_gaussian <- function(FX,
                 },
                 future.seed = TRUE,
                 future.globals = TRUE
-            ))
+            )
+            ll_beta <- future::value(ll_beta)
+            ll_beta <- unlist(ll_beta)
             beta_opt <- beta[which.max(ll_beta)]
         })
         h_final <- get_h_adapt(alpha_opt, beta_opt)
@@ -312,7 +319,7 @@ fit_local_gaussian <- function(FX,
         h = h_final,
         degree = degree,
         control = control,
-        cores = cores
+        cl = cl
     )
     if (length(bandwidths) > 1L) {
         res_opt$global_cv <- data.frame(bandwidth = bandwidths, loglik = ll_all)
@@ -341,7 +348,7 @@ fit_local_gaussian <- function(FX,
 #' to use at each value in \code{x0}.
 #' @param degree Degree of local polynomial approximation.
 #' @param control A \code{list} of control parameters for optimization.
-#' @param cores Number of cores to use.
+#' @param cl A cluster for parallel computations.
 #'
 #' @return A list with the following components:
 #' \itemize{
@@ -358,7 +365,7 @@ fit_local_gaussian <- function(FX,
                        h,
                        degree,
                        control,
-                       cores) {
+                       cl) {
     # Basic checks
     assert_that(
         is.vector(x, mode = "numeric"),
@@ -368,13 +375,11 @@ fit_local_gaussian <- function(FX,
         dim(FX)[2] > 1L,
         length(h) == 1L || length(h) == length(x0),
         is.numeric(h) && all(h > 0) && all(h < 1),
-        is.numeric(cores) && cores >= 1,
         is.list(control),
         !anyDuplicated(x) && !is.unsorted(x),
         is.numeric(x0),
         is.numeric(degree) && degree >= 0
     )
-    cores <- as.integer(cores)
     degree <- as.integer(degree)
 
     if (length(h) == 1L) {
@@ -413,12 +418,6 @@ fit_local_gaussian <- function(FX,
 
     # Normal-transform pseudo-observations
     NX <- stats::qnorm(FX)
-
-    # Set up futures plan
-    cl <- parallel::makeCluster(cores)
-    future::plan(future::cluster, workers = cl)
-    on.exit({ future::plan(future::sequential); parallel::stopCluster(cl) },
-            add = TRUE)
 
     # Since Python functions are not serializable, we can't load the
     # optimization function in the global environment. Instead, the function
@@ -465,6 +464,7 @@ fit_local_gaussian <- function(FX,
             future.seed = TRUE,
             future.globals = TRUE
         )
+        eta_est <- future::value(eta_est)
     })
 
     # Matrix of estimated calibration coefficients

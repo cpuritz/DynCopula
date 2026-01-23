@@ -20,6 +20,7 @@ Imports:
     jsonlite,
     kde1d,
     Matrix,
+    mclust,
     methods,
     mvtnorm,
     parallel,

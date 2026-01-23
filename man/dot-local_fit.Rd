@@ -4,7 +4,7 @@
 \alias{.local_fit}
 \title{Local likelihood estimation of conditional Gaussian copula model}
 \usage{
-.local_fit(FX, x, x0, h, degree, control, cores)
+.local_fit(FX, x, x0, h, degree, control, cl)
 }
 \arguments{
 \item{FX}{Matrix of pseudo-observations at covariate values.}
@@ -22,7 +22,7 @@ to use at each value in \code{x0}.}
 
 \item{control}{A \code{list} of control parameters for optimization.}
 
-\item{cores}{Number of cores to use.}
+\item{cl}{A cluster for parallel computations.}
 }
 \value{
 A list with the following components:

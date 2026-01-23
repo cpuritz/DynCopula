@@ -2,23 +2,23 @@
 
 #' Spline estimation of dynamic Gaussian copula model
 #'
-#' @description Fit a dynamic Gaussian copula model using B-splines.
+#' @description Fit a dynamic Gaussian copula model using penalized splines.
 #'
 #' @param FX Matrix of pseudo-observations at covariate values.
 #' @param x Vector of covariate values corresponding to \code{FX}. Must be
 #' sorted and have no duplicates.
 #' @param lambda Vector of smoothing parameters.
-#' @param lambda_blocks Either an integer specifying the number of smoothing
-#' blocks, or a vector of integers specifying block assignments. Each block
-#' has its own smoothing parameter. Default is \code{1}.
+#' @param lambda_blocks Number of smoothing blocks. Default is \code{1}.
 #' @param df Vector of degrees of freedom.
-#' @param nfold Number of folds for cross-validation.
+#' @param nfold Number of folds for cross-validation. Default is \code{10}.
 #' @param cores Number of cores to use. Default is \code{1}.
 #' @param control A \code{list} of control parameters for optimization.
 #'
 #' @details Cross-validation is used to select the values of \code{lambda} and
-#' \code{df}. The number of sets of parameters evaluated is of size
-#' \code{len(lambda_blocks)^(lambda_blocks) * len(df)}.
+#' \code{df}. An initial estimate is first computed by cross-validation over all
+#' values of \code{lambda} and \code{df}. If \code{lambda_blocks > 1}, a second
+#' sweep is performed to choose block-specific smoothing parameters, with the
+#' parameter set of size \code{|lambda|^(lambda_blocks)}.
 #'
 #' Optimization is performed using L-BFGS. The \code{control} argument
 #' is a list that supplies control parameters for optimization. The following
@@ -38,35 +38,43 @@
 #' @return A list with the following components:
 #' \itemize{
 #'   \item \code{x}: The input argument \code{x}.
-#'   \item \code{h}: The bandwidth used at each value in \code{x0}.
+#'   \item \code{NX}: Normal-transformed pseudo-observations.
 #'   \item \code{eta}: Matrix of estimated calibration coefficients.
 #'   \item \code{rho}: Matrix of estimated pairwise correlation coefficients.
-#'   \item \code{cv}: Data frame of cross-validation results.
+#'   \item \code{lambda}: The optimal smoothing parameter.
+#'   \item \code{df}: The optimal degrees of freedom.
 #' }
 #'
 #' @export
 fit_spline_gaussian <- function(FX,
                                 x,
                                 lambda,
-                                lambda_blocks = 1L,
+                                lambda_blocks = 1,
                                 df,
-                                nfold = 5L,
-                                cores = 1L,
+                                nfold = 10,
+                                cores = 1,
                                 control = list()) {
     assert_that(
+        is.numeric(FX) && is.matrix(FX),
         is.vector(x, mode = "numeric"),
         !anyDuplicated(x),
-        is.matrix(FX),
-        is.numeric(FX),
+        !is.unsorted(x),
         dim(FX)[1] == length(x),
-        is.numeric(lambda),
-        is.numeric(lambda_blocks),
-        is.numeric(df) && all(df >= 1),
+        is.vector(lambda, mode = "numeric"),
+        is.numeric(lambda_blocks) && lambda_blocks >= 1,
+        is.vector(df, mode = "numeric") && all(df >= 1),
         is.numeric(nfold) && nfold >= 2,
         is.numeric(cores) && cores >= 1,
         is.list(control)
     )
-    cores <- as.integer(cores)
+    lambda_blocks <- as.integer(lambda_blocks)
+    nfold <- as.integer(cores)
+
+    # Set up futures plan
+    cl <- parallel::makeCluster(as.integer(cores))
+    future::plan(future::cluster, workers = cl)
+    on.exit({ future::plan(future::sequential); parallel::stopCluster(cl) },
+            add = TRUE)
 
     # Default control parameters
     defaults <- list(
@@ -92,30 +100,102 @@ fit_spline_gaussian <- function(FX,
     control$max_itr <- as.integer(control$max_itr)
     control$history_size <- as.integer(control$history_size)
 
-    # Dimension
-    d <- dim(FX)[2]
-    npar <- choose(d, 2)
+    # Normal-transform pseudo-observations
+    NX <- stats::qnorm(FX)
 
-    # Blocks of smoothing parameters
-    if (length(lambda_blocks) == 1) {
-        lambda_blocks <- as.integer(lambda_blocks)
-        assert_that(lambda_blocks >= 1L)
-        # Break into equal sized blocks
-        nrep <- ceiling(npar / lambda_blocks)
-        lambda_blocks <- sort(rep(seq_len(lambda_blocks), nrep)[1:npar])
+    if (lambda_blocks != 1L) {
+        message("Fitting pilot estimate")
     }
-    assert_that(length(lambda_blocks) == npar)
-    # Convert to sequential integers starting at 1
-    lambda_blocks <- as.integer(factor(lambda_blocks))
-    nblock <- length(unique(lambda_blocks))
+
+    # First fit pilot estimate
+    res_pilot <- .spline_fit(
+        NX = NX,
+        x = x,
+        lambda = lambda,
+        lambda_blocks = 1L,
+        df = df,
+        nfold = nfold,
+        control = control,
+        cl = cl
+    )
+
+    if (lambda_blocks == 1L) {
+        res_pilot$beta <- NULL
+        return(res_pilot)
+    }
+
+    message("Fitting multiple smoothing blocks")
+
+    # Quantify roughness of pilot curve estimates
+    D2 <- diff(diff(diag(dim(res_pilot$beta)[1])))
+    S <- t(D2) %*% D2
+    roughness <- diag(t(res_pilot$beta) %*% S %*% res_pilot$beta)
+
+    # Identify clusters of curves by roughness
+    sink <- utils::capture.output(
+        groups <- mclust::Mclust(roughness, G = lambda_blocks)$classification
+    )
+
+    # Fit using multiple smoothing blocks using pilot df
+    res_spline <- .spline_fit(
+        NX = NX,
+        x = x,
+        lambda = lambda,
+        lambda_blocks = groups,
+        df = res_pilot$df,
+        nfold = nfold,
+        control = control,
+        cl = cl
+    )
+    res_spline$beta <- NULL
+    return(res_spline)
+}
+
+###############################################################################
+
+#' Spline estimation of dynamic Gaussian copula model
+#'
+#' @description Fit a dynamic Gaussian copula model using penalized splines.
+#' Internal function.
+#'
+#' @param NX Matrix of normal-transformed pseudo-observations at covariate
+#' values.
+#' @param x Vector of covariate values corresponding to \code{FX}. Must be
+#' sorted and have no duplicates.
+#' @param lambda Vector of smoothing parameters.
+#' @param lambda_blocks A vector of integers specifying block assignments. Each
+#' block has its own smoothing parameter.
+#' @param df Vector of degrees of freedom.
+#' @param nfold Number of folds for cross-validation.
+#' @param control A \code{list} of control parameters for optimization.
+#' @param cl A cluster for parallel computations.
+#'
+#' @return A list with the following components:
+#' \itemize{
+#'   \item \code{x}: The input argument \code{x}.
+#'   \item \code{NX}: Normal-transformed pseudo-observations.
+#'   \item \code{eta}: Matrix of estimated calibration coefficients.
+#'   \item \code{rho}: Matrix of estimated pairwise correlation coefficients.
+#'   \item \code{lambda}: The optimal smoothing parameters.
+#'   \item \code{df}: The optimal degrees of freedom.
+#'   \item \code{beta}: Estimated basis coefficients.
+#' }
+.spline_fit <- function(NX,
+                        x,
+                        lambda,
+                        lambda_blocks,
+                        df,
+                        nfold,
+                        control,
+                        cl) {
+    # Dimension
+    d <- dim(NX)[2]
+    npar <- choose(d, 2)
 
     # Scale covariates to [0, 1]
     min_x <- x[1]
     dx <- x[length(x)] - min_x
     x <- (x - min_x) / dx
-
-    # Normal-transform pseudo-observations
-    NX <- stats::qnorm(FX)
 
     # Gaussian copula log likelihood
     loglik <- function(NX, eta) {
@@ -137,107 +217,44 @@ fit_spline_gaussian <- function(FX,
     folds <- seq_len(nfold)
     fold_ids <- rep(folds, ceiling(length(x) / nfold))[1:length(x)]
 
+    # Number of smoothing blocks
+    nblock <- length(unique(lambda_blocks))
+
     # All combinations of lambda and df
     combs <- expand.grid(c(rep(list(lambda), nblock), list(df = df)))
     colnames(combs)[seq_len(nblock)] <- paste0("lambda", seq_len(nblock))
     ncomb <- dim(combs)[1]
 
-    if (cores > 1L) {
-        # Set up futures plan
-        cl <- parallel::makeCluster(cores)
-        future::plan(future::cluster, workers = cl)
-        on.exit({ future::plan(future::sequential); parallel::stopCluster(cl) },
-                add = TRUE)
-
-        # Since Python functions are not serializable, we can't load the
-        # optimization function in the global environment. Instead, the function
-        # needs to be loaded on each worker. This environment stores the
-        # function once it has been loaded to avoid having to do it multiple
-        # times on the same worker.
-        .fit_env <- new.env(parent = emptyenv())
-        fit_fun <- function(par0, x, NX, B, lam, control) {
-            # Load the module if it hasn't been loaded yet
-            if (!exists("fit_fun", envir = .fit_env, inherits = FALSE)) {
-                .fit_env$fit_fun <- reticulate::import_from_path(
-                    module = "spline_gaussian",
-                    path = system.file("python", package = "DynCopula"),
-                    delay_load = FALSE
-                )$fit_gaussian_spline
-            }
-            .fit_env$fit_fun(
-                par0 = par0,
-                x = x,
-                NX = NX,
-                B = B,
-                lam = lam,
-                control = control
-            )
+    # Since Python functions are not serializable, we can't load the
+    # optimization function in the global environment. Instead, the function
+    # needs to be loaded on each worker. This environment stores the
+    # function once it has been loaded to avoid having to do it multiple
+    # times on the same worker.
+    .fit_env <- new.env(parent = emptyenv())
+    fit_fun <- function(par0, x, NX, B, lam, control) {
+        # Load the module if it hasn't been loaded yet
+        if (!exists("fit_fun", envir = .fit_env, inherits = FALSE)) {
+            .fit_env$fit_fun <- reticulate::import_from_path(
+                module = "spline_gaussian",
+                path = system.file("python", package = "DynCopula"),
+                delay_load = FALSE
+            )$fit_gaussian_spline
         }
+        .fit_env$fit_fun(
+            par0 = par0,
+            x = x,
+            NX = NX,
+            B = B,
+            lam = lam,
+            control = control
+        )
+    }
 
-        progressr::with_progress({
-            pbar <- progressr::progressor(along = seq_len(ncomb))
-            cv <- future.apply::future_lapply(
-                X = seq_len(ncomb),
-                FUN = function(i) {
-                    pars_i <- unlist(combs[i, ])
-                    # Lambda value for each block
-                    group_lambdas <- pars_i[seq_len(nblock)]
-                    # Lambda value for each component of eta
-                    lambda_i <- group_lambdas[lambda_blocks]
-                    # Basis size
-                    df_i <- pars_i[length(pars_i)]
-
-                    cv_i <- 0
-                    for (fold in folds) {
-                        test_ix <- which(fold_ids == fold)
-                        train_ix <- setdiff(seq_along(x), test_ix)
-
-                        # Spline basis matrices
-                        B_train <- get_basis(x[train_ix], df_i)
-                        B_test <- get_basis(x[test_ix], df_i)
-
-                        # Initial estimate
-                        par0 <- matrix(0, nrow = df_i, ncol = npar)
-
-                        # Fit using training data
-                        beta_est <- fit_fun(
-                            par0 = par0,
-                            x = x[train_ix],
-                            NX = NX[train_ix, , drop = FALSE],
-                            B = B_train,
-                            lam = lambda_i,
-                            control = control
-                        )
-
-                        # Predictions for test data
-                        H_test <- B_test %*% beta_est
-
-                        # Cross-validated likelihood criterion
-                        ll <- sum(sapply(seq_along(test_ix), function(j) {
-                            loglik(NX[test_ix[j], ], H_test[j, ])
-                        }))
-                        cv_i <- cv_i + ll
-                    }
-                    pbar()
-                    return(cv_i)
-                },
-                future.seed = TRUE,
-                future.globals = TRUE
-            )
-        })
-        cv <- unlist(cv)
-    } else {
-        # Load Python module
-        fit_fun <- reticulate::import_from_path(
-            module = "spline_gaussian",
-            path = system.file("python", package = "DynCopula"),
-            delay_load = FALSE
-        )$fit_gaussian_spline
-
-        progressr::with_progress({
-            pbar <- progressr::progressor(along = seq_len(ncomb))
-
-            cv <- sapply(seq_len(ncomb), function(i) {
+    progressr::with_progress({
+        pbar <- progressr::progressor(along = seq_len(ncomb))
+        cv <- future.apply::future_lapply(
+            X = seq_len(ncomb),
+            FUN = function(i) {
                 pars_i <- unlist(combs[i, ])
                 # Lambda value for each block
                 group_lambdas <- pars_i[seq_len(nblock)]
@@ -279,15 +296,20 @@ fit_spline_gaussian <- function(FX,
                 }
                 pbar()
                 return(cv_i)
-            })
-        })
-    }
+            },
+            future.seed = TRUE,
+            future.globals = TRUE
+        )
+        cv <- future::value(cv)
+    })
 
-    ix_opt <- which.max(cv)
     # Optimal lambda values for each component of eta
+    ix_opt <- which.max(unlist(cv))
     lambda_opt <- unlist(combs[ix_opt, seq_len(nblock)])[lambda_blocks]
+
     # Optimal basis size
     df_opt <- combs[ix_opt, dim(combs)[2]]
+
     # Estimation using the CV optimal lambda and df
     B <- get_basis(x, df_opt)
     par0 <- matrix(0, nrow = df_opt, ncol = npar)
@@ -312,14 +334,6 @@ fit_spline_gaussian <- function(FX,
         Rhat <- t(Rhat)
     }
 
-    # Estimate roughness
-    x_unif <- seq(0, 1, length.out = 1e3)
-    roughness <- apply(Hhat, 2, function(y) {
-        h_unif <- stats::predict(stats::smooth.spline(x = x, y = y), x_unif)$y
-        sum(diff(diff(h_unif))^2)
-    })
-    roughness <- roughness / min(roughness)
-
     # Add numbered eta/rho labels
     colnames(Hhat) <- paste0("eta", seq_len(npar))
     ix_lab <- apply(utils::combn(seq_len(d), 2), 2, function(x) {
@@ -330,16 +344,14 @@ fit_spline_gaussian <- function(FX,
     # Rescale covariates back to their original scale
     x <- x * dx + min_x
 
-    # Save cross validation results
-    combs$ll <- cv
-
     return(list(
         x = x,
         NX = NX,
         eta = Hhat,
         rho = Rhat,
-        cv = combs,
-        roughness = roughness
+        lambda = lambda_opt,
+        df = df_opt,
+        beta = beta_opt
     ))
 }
 
