@@ -21,6 +21,8 @@ fit_dyn_corr(
 \item{bandwidths}{Vector of global kernel bandwidths to test. Default is
 \code{seq(0.01, 0.20, 0.01)}.}
 
+\item{variable}{Whether to use a variable bandwidth. Default is \code{TRUE}.}
+
 \item{alpha}{Powers to test for the variable bandwidth function. Ignored if
 \code{variable = FALSE}. Default is \code{seq(0, 1, 0.1)}.}
 

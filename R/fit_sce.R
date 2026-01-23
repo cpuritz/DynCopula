@@ -8,6 +8,7 @@
 #' @param sce A \code{SingleCellExperiment}.
 #' @param bandwidths Vector of global kernel bandwidths to test. Default is
 #' \code{seq(0.01, 0.20, 0.01)}.
+#' @param variable Whether to use a variable bandwidth. Default is \code{TRUE}.
 #' @param alpha Powers to test for the variable bandwidth function. Ignored if
 #' \code{variable = FALSE}. Default is \code{seq(0, 1, 0.1)}.
 #' @param beta Scale factors to test for the variable bandwidth function.

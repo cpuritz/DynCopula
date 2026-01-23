@@ -145,6 +145,8 @@ fit_metacell_margins <- function(sce,
 #' parameter.
 #' @param sigma_formula A character vector specifying formulas for the
 #' dispersion parameter.
+#' @param save Whether to save all information about margins. Default is
+#' \code{FALSE}.
 #'
 #' @returns The same \code{SingleCellExperiment} as was passed as input, but
 #' with the metadata entry \code{dyn_corr} updated to include the following

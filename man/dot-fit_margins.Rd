@@ -18,6 +18,9 @@ parameter.}
 
 \item{sigma_formula}{A character vector specifying formulas for the
 dispersion parameter.}
+
+\item{save}{Whether to save all information about margins. Default is
+\code{FALSE}.}
 }
 \value{
 The same \code{SingleCellExperiment} as was passed as input, but
