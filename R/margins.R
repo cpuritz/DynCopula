@@ -12,8 +12,6 @@
 #' parameter.
 #' @param sigma_formula A character vector specifying formulas for the
 #' dispersion parameter.
-#' @param save Whether to save all information about margins. Default is
-#' \code{FALSE}.
 #'
 #' @returns The same \code{SingleCellExperiment} as was passed as input, but
 #' with the metadata entry \code{dyn_corr} updated to include the following
@@ -38,28 +36,23 @@
 #'   pseudotime.
 #'   \item \code{mu_formula = "gamlss::pb(pseudotime)"}: mean varies through a
 #'   P-spline with pseudotime. Any spline functions need to be explicitly
-#'   scoped.
+#'   scoped (e.g., \code{gamlss::pb} instead of \code{pb}).
 #' }
 #' For ZINBI models, the zero probability parameter is assumed to be constant.
-#'
-#' If \code{save = TRUE}, all information returned by \link[gamlss]{gamlss} is
-#' retained. This will greatly increase the size of the returned
-#' \code{SingleCellExperiment}, and thus \code{save = FALSE} is the default. See
-#' \link[gamlss]{gamlss.control} for more details.
 #'
 #' @export
 fit_margins <- function(sce,
                         family = c("NBI", "ZINBI"),
                         mu_formula,
-                        sigma_formula,
-                        save = FALSE) {
+                        sigma_formula) {
     family <- match.arg(family, several.ok = TRUE)
+    # We need margin information to sample new cells, so 'save' is set to TRUE
     sce <- .fit_margins(
         sce = sce,
         family = family,
         mu_formula = mu_formula,
         sigma_formula = sigma_formula,
-        save = save
+        save = TRUE
     )
     return(sce)
 }
@@ -79,8 +72,6 @@ fit_margins <- function(sce,
 #' parameter.
 #' @param sigma_formula A character vector specifying formulas for the
 #' dispersion parameter.
-#' @param save Whether to save all information about margins. Default is
-#' \code{FALSE}.
 #'
 #' @returns The same \code{SingleCellExperiment} as was passed as input, but
 #' with the embedded metacell \code{SingleCellExperiment} updated.
@@ -98,31 +89,30 @@ fit_margins <- function(sce,
 #'   pseudotime.
 #'   \item \code{mu_formula = "gamlss::pb(pseudotime)"}: mean varies through a
 #'   P-spline with pseudotime. Any spline functions need to be explicitly
-#'   scoped.
+#'   scoped (e.g., \code{gamlss::pb} instead of \code{pb}).
 #' }
 #' For ZINBI models, the zero probability parameter is assumed to be constant.
-#'
-#' If \code{save = TRUE}, all information returned by \link[gamlss]{gamlss} is
-#' retained. This will greatly increase the size of the returned
-#' \code{SingleCellExperiment}, and thus \code{save = FALSE} is the default. See
-#' \link[gamlss]{gamlss.control} for more details.
 #'
 #' @export
 fit_metacell_margins <- function(sce,
                                  family = c("NBI", "ZINBI"),
                                  mu_formula,
-                                 sigma_formula,
-                                 save = FALSE) {
-    assert_that("metacell_sce" %in% names(metadata(sce)$dyn_corr))
+                                 sigma_formula) {
+    if (!"metacell_sce" %in% names(metadata(sce)$dyn_corr)) {
+        stop("'generate_metacells' must be run first.")
+    }
     family <- match.arg(family, several.ok = TRUE)
 
     mc_sce <- metadata(sce)$dyn_corr$metacell_sce
+    # Once the pseudo-observations for metacells are computed, we don't need
+    # the metacell margin information again. Therefore, 'save' is set to FALSE
+    # to save memory.
     mc_sce <- .fit_margins(
         sce = mc_sce,
         family = family,
         mu_formula = mu_formula,
         sigma_formula = sigma_formula,
-        save = save
+        save = FALSE
     )
 
     # Save the metacell sce in the original sce
@@ -139,14 +129,12 @@ fit_metacell_margins <- function(sce,
 #'
 #' @param sce A \code{SingleCellExperiment}.
 #' @param family A character vector specifying families to use. Options are
-#' \code{"NBI"} (negative binomial) and \code{"ZINBI"}
-#' (zero-inflated negative binomial).
+#' \code{"NBI"} and \code{"ZINBI"}.
 #' @param mu_formula A character vector specifying formulas for the mean
 #' parameter.
 #' @param sigma_formula A character vector specifying formulas for the
 #' dispersion parameter.
-#' @param save Whether to save all information about margins. Default is
-#' \code{FALSE}.
+#' @param save Whether to save all information about margins.
 #'
 #' @returns The same \code{SingleCellExperiment} as was passed as input, but
 #' with the metadata entry \code{dyn_corr} updated to include the following
@@ -195,6 +183,11 @@ fit_metacell_margins <- function(sce,
         stringsAsFactors = FALSE,
         KEEP.OUT.ATTRS = FALSE
     )
+
+    # This purpose of this line is solely to avoid triggering a check note about
+    # gamlss.dist being imported but not used, since
+    # getExportedValue("gamlss.dist", ) is not recognized as using gamlss.dist.
+    gamlss_dist_note <- gamlss.dist::dNBI(1)
 
     progressr::with_progress({
         pbar <- progressr::progressor(along = seq_len(dim(X)[2]))

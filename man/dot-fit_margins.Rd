@@ -10,8 +10,7 @@
 \item{sce}{A \code{SingleCellExperiment}.}
 
 \item{family}{A character vector specifying families to use. Options are
-\code{"NBI"} (negative binomial) and \code{"ZINBI"}
-(zero-inflated negative binomial).}
+\code{"NBI"} and \code{"ZINBI"}.}
 
 \item{mu_formula}{A character vector specifying formulas for the mean
 parameter.}
@@ -19,8 +18,7 @@ parameter.}
 \item{sigma_formula}{A character vector specifying formulas for the
 dispersion parameter.}
 
-\item{save}{Whether to save all information about margins. Default is
-\code{FALSE}.}
+\item{save}{Whether to save all information about margins.}
 }
 \value{
 The same \code{SingleCellExperiment} as was passed as input, but
