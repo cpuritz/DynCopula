@@ -4,12 +4,12 @@
 \alias{sample_cells}
 \title{Sample cells}
 \usage{
-sample_cells(sce, times)
+sample_cells(sce, new_times)
 }
 \arguments{
 \item{sce}{A \code{SingleCellExperiment}.}
 
-\item{times}{A vector of pseudotimes to sample at.}
+\item{new_times}{A vector of pseudotimes to sample at.}
 }
 \value{
 A \code{SingleCellExperiment}.

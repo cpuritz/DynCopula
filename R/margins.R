@@ -169,7 +169,6 @@ fit_metacell_margins <- function(sce,
         is.character(sigma_formula),
         is.logical(save)
     )
-    family <- match.arg(family, several.ok = TRUE)
 
     # Set up futures plan
     cores <- metadata(sce)$dyn_corr$cores
@@ -218,8 +217,8 @@ fit_metacell_margins <- function(sce,
                     nu_formula <- stats::formula("~ 1")
 
                     # Load the gamlss family function
-                    fam <- getExportedValue("gamlss.dist", fname)
                     fname <- combs[i, "family"]
+                    fam <- getExportedValue("gamlss.dist", fname)
 
                     # Fit the distribution
                     fit <- gamlss::gamlss(
