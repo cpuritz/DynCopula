@@ -289,10 +289,10 @@ fit_metacell_margins <- function(sce,
         )
         par$y <- NULL
 
-        # Load the correct quantile function
+        # Load the correct distribution function
         pfun <- getExportedValue("gamlss.dist", paste0("p", mfit$family[1]))
-        pX <- function(x) {
-            do.call(pfun, c(list(q = x), par))
+        pX <- function(q) {
+            do.call(pfun, c(list(q = q), par))
         }
         FX <- pX(counts[, i])
         FXm <- pX(counts[, i] - 1)
