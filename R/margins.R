@@ -294,7 +294,9 @@ fit_metacell_margins <- function(sce,
         pX <- function(q) {
             do.call(pfun, c(list(q = q), par))
         }
+        # Pseudo-observations
         FX <- pX(counts[, i])
+        # Left limits of pseudo-observations
         FXm <- pX(counts[, i] - 1)
 
         # Push values away from boundaries of unit cube
