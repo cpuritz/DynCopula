@@ -22,7 +22,7 @@ sample_cells <- function(sce, new_times) {
     genes <- dyn_corr$features
     time_col <- dyn_corr$time_col
 
-    counts <- SingleCellExperiment::counts(sce)
+    counts <- SummarizedExperiment::assay(sce, dyn_corr$assay)
     counts <- Matrix::t(counts[genes, ])
 
     # Out of the time points at which correlation coefficients were estimated,
