@@ -93,10 +93,7 @@ fit_dyn_corr <- function(sce,
     dyn_corr <- metadata(sce_mc)$dyn_corr
     assert_that("margins" %in% names(dyn_corr))
 
-    X <- SummarizedExperiment::assay(sce_mc, dyn_corr$assay)
-    X <- Matrix::t(X[dyn_corr$features, ])
     pseudotimes <- sce_mc[[dyn_corr$time_col]]
-    t0 <- sort(pseudotimes)
 
     # Construct jittered pseudo-observations
     FX <- dyn_corr$FXm + (dyn_corr$FX - dyn_corr$FXm) * dyn_corr$V
