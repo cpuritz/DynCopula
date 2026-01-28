@@ -123,8 +123,14 @@ fit_local_gaussian <- function(FX,
 
     # Require that global model (alpha = 0, beta = 1) is included in the set of
     # variable bandwidth parameters
-    alpha <- sort(unique(c(0.0, alpha)))
-    beta <- sort(unique(c(1.0, beta)))
+    alpha <- unique(alpha)
+    beta <- unique(beta)
+    if (!any(alpha < 1e-16)) {
+        alpha <- c(0, alpha)
+    }
+    if (!any(abs(beta - 1.0) < 1e-16)) {
+        beta <- c(1.0, beta)
+    }
 
     # Default control parameters
     defaults <- list(
@@ -301,8 +307,8 @@ fit_local_gaussian <- function(FX,
             ll_alpha_opt <- ll_alpha[ix_opt]
 
             # Next select beta with alpha = alpha_opt, skipping beta = 1
-            beta <- c(1, beta[beta != 1])
-            steps <- expand.grid(beta = beta[2:length(beta)], cv_ix = cv_ix)
+            beta_no_one <- beta[abs(beta - 1) > 1e-16]
+            steps <- expand.grid(beta = beta_no_one, cv_ix = cv_ix)
             ll_beta <- future.apply::future_apply(
                 X = steps,
                 MARGIN = 1,
@@ -324,11 +330,12 @@ fit_local_gaussian <- function(FX,
                 future.globals = TRUE,
                 future.scheduling = 0
             )
-            ll_beta <- sapply(beta, function(b) {
+            ll_beta <- sapply(beta_no_one, function(b) {
                 sum(ll_beta[1, ][ll_beta[2, ] == b])
             })
-            ll_beta <- c(ll_alpha_opt, ll_beta)
-            beta_opt <- beta[which.max(ll_beta)]
+
+            # Add back in likelihood for beta = 1
+            beta_opt <- c(1.0, beta_no_one)[which.max(c(ll_alpha_opt, ll_beta))]
         })
         h_final <- get_h_adapt(alpha_opt, beta_opt)
     } else {
@@ -351,7 +358,7 @@ fit_local_gaussian <- function(FX,
     }
     if (variable) {
         a_df <- data.frame(alpha = alpha, beta = 1.0, ll = ll_alpha)
-        b_df <- data.frame(alpha = alpha_opt, beta = beta, ll = ll_beta)
+        b_df <- data.frame(alpha = alpha_opt, beta = beta_no_one, ll = ll_beta)
         res_opt$var_cv <- rbind(a_df, b_df)
     }
     return(res_opt)
