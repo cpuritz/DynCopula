@@ -202,31 +202,35 @@ fit_local_gaussian <- function(FX,
     if (length(bandwidths) > 1L) {
         message("Selecting global bandwidth")
         progressr::with_progress({
-            pbar <- progressr::progressor(along = bandwidths)
-            ll_all <- future.apply::future_lapply(
-                X = bandwidths,
-                FUN = function(h) {
-                    ll <- sum(sapply(cv_ix, function(j) {
-                        # Estimate calibration coefficients when leaving out
-                        # observation at j
-                        eta_j <- compute_one_eta(
-                            NX = NX[-j, ],
-                            x = x[-j],
-                            x0 = x[j],
-                            h = h
-                        )
-                        # Log-likelihood of estimated calibration coefficients
-                        # at observation j
-                        loglik(NX[j, ], eta_j)
-                    }))
+            steps <- expand.grid(bandwidth = bandwidths, cv_ix = cv_ix)
+            pbar <- progressr::progressor(steps = dim(steps)[1])
+            ll_all <- future.apply::future_apply(
+                X = steps,
+                MARGIN = 1,
+                FUN = function(r) {
+                    h <- r[1]
+                    j <- as.integer(r[2])
+                    # Estimate calibration coefficients when leaving out
+                    # observation at j
+                    eta_j <- compute_one_eta(
+                        NX = NX[-j, ],
+                        x = x[-j],
+                        x0 = x[j],
+                        h = h
+                    )
+                    # Log-likelihood of estimated calibration coefficients
+                    # at observation j
+                    ll <- loglik(NX[j, ], eta_j)
                     pbar()
-                    return(ll)
+                    return(c(ll, h))
                 },
                 future.seed = TRUE,
-                future.globals = TRUE
+                future.globals = TRUE,
+                future.scheduling = 0
             )
-            ll_all <- future::value(ll_all)
-            ll_all <- unlist(ll_all)
+            ll_all <- sapply(bandwidths, function(h) {
+                sum(ll_all[1, ][ll_all[2, ] == h])
+            })
         })
         h_opt <- bandwidths[which.max(ll_all)]
     } else {
@@ -256,53 +260,63 @@ fit_local_gaussian <- function(FX,
         # beta = 1. We then use this value of alpha to refine beta. Note that
         # this set of models includes the global model (alpha = 0, beta = 1).
         progressr::with_progress({
-            total_par <- length(alpha) + length(beta)
-            pbar <- progressr::progressor(along = seq_len(total_par))
+            total_steps <- (length(alpha) + length(beta)) * length(cv_ix)
+            pbar <- progressr::progressor(steps = total_steps)
 
-            ll_alpha <- future.apply::future_lapply(
-                X = alpha,
-                FUN = function(a_val) {
+            # First select alpha with beta = 1
+            steps <- expand.grid(alpha = alpha, cv_ix = cv_ix)
+            ll_alpha <- future.apply::future_apply(
+                X = steps,
+                MARGIN = 1,
+                FUN = function(r) {
+                    a_val <- r[1]
+                    j <- r[2]
                     h_adapt <- get_h_adapt(a_val, 1.0)
-                    ll_ix <- sum(sapply(cv_ix, function(j) {
-                        eta_j <- compute_one_eta(
-                            NX = NX[-j, ],
-                            x = x[-j],
-                            x0 = x[j],
-                            h = h_adapt[j]
-                        )
-                        return(loglik(NX[j, ], eta_j))
-                    }))
+                    eta_j <- compute_one_eta(
+                        NX = NX[-j, ],
+                        x = x[-j],
+                        x0 = x[j],
+                        h = h_adapt[j]
+                    )
+                    ll <- loglik(NX[j, ], eta_j)
                     pbar()
-                    return(ll_ix)
+                    return(c(ll, a_val))
                 },
                 future.seed = TRUE,
-                future.globals = TRUE
+                future.globals = TRUE,
+                future.scheduling = 0
             )
-            ll_alpha <- future::value(ll_alpha)
-            ll_alpha <- unlist(ll_alpha)
+            ll_alpha <- sapply(alpha, function(a) {
+                sum(ll_alpha[1, ][ll_alpha[2, ] == a])
+            })
             alpha_opt <- alpha[which.max(ll_alpha)]
 
-            ll_beta <- future.apply::future_lapply(
-                X = beta,
-                FUN = function(b_val) {
+            # Next select beta with alpha = alpha_opt
+            steps <- expand.grid(beta = beta, cv_ix = cv_ix)
+            ll_beta <- future.apply::future_apply(
+                X = steps,
+                MARGIN = 1,
+                FUN = function(r) {
+                    b_val <- r[1]
+                    j <- r[2]
                     h_adapt <- get_h_adapt(alpha_opt, b_val)
-                    ll_ix <- sum(sapply(cv_ix, function(j) {
-                        eta_j <- compute_one_eta(
-                            NX = NX[-j, ],
-                            x = x[-j],
-                            x0 = x[j],
-                            h = h_adapt[j]
-                        )
-                        return(loglik(NX[j, ], eta_j))
-                    }))
+                    eta_j <- compute_one_eta(
+                        NX = NX[-j, ],
+                        x = x[-j],
+                        x0 = x[j],
+                        h = h_adapt[j]
+                    )
+                    ll <- loglik(NX[j, ], eta_j)
                     pbar()
-                    return(ll_ix)
+                    return(c(ll, b_val))
                 },
                 future.seed = TRUE,
-                future.globals = TRUE
+                future.globals = TRUE,
+                future.scheduling = 0
             )
-            ll_beta <- future::value(ll_beta)
-            ll_beta <- unlist(ll_beta)
+            ll_beta <- sapply(beta, function(b) {
+                sum(ll_beta[1, ][ll_beta[2, ] == b])
+            })
             beta_opt <- beta[which.max(ll_beta)]
         })
         h_final <- get_h_adapt(alpha_opt, beta_opt)
@@ -464,7 +478,6 @@ fit_local_gaussian <- function(FX,
             future.seed = TRUE,
             future.globals = TRUE
         )
-        eta_est <- future::value(eta_est)
     })
 
     # Matrix of estimated calibration coefficients
