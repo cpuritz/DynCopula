@@ -476,7 +476,8 @@ fit_local_gaussian <- function(FX,
                 return(y)
             },
             future.seed = TRUE,
-            future.globals = TRUE
+            future.globals = TRUE,
+            future.scheduling = 0
         )
     })
 
