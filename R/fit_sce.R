@@ -131,6 +131,7 @@ fit_dyn_corr <- function(sce,
     colnames(res$rho) <- gene_names
 
     # Save results in metadata
+    metadata(sce)$dyn_corr$eta <- res$eta
     metadata(sce)$dyn_corr$rho <- res$rho
     metadata(sce)$dyn_corr$bandwidths <- res$bandwidths
 
