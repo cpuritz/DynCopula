@@ -237,7 +237,7 @@ fit_local_gaussian <- function(FX,
     if (variable) {
         message("Selecting variable bandwidth parameters")
 
-        # Estimate density function of covariate variables
+        # Estimate density function of covariate
         x_dens <- kde1d::dkde1d(x, kde1d::kde1d(x))
         # Geometric mean across all covariate values
         G <- exp(mean(log(x_dens)))
