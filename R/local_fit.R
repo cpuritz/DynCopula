@@ -243,7 +243,7 @@ fit_local_gaussian <- function(FX,
         G <- exp(mean(log(x_dens)))
 
         # Compute adaptive bandwidths
-        get_h_adapt <- function(alpha, beta, eps = 1e-12) {
+        get_h_adapt <- function(alpha, beta, eps = 1e-6) {
             h_adapt <- beta * h_opt * (x_dens / G)^(-alpha)
             # Restrict bandwidths to (0, 1)
             h_adapt <- pmin(pmax(h_adapt, eps), 1 - eps)
