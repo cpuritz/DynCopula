@@ -236,7 +236,6 @@ fit_metacell_margins <- function(sce,
             future.seed = TRUE,
             future.packages = c("gamlss.dist")
         )
-        margins <- future::value(margins)
     })
 
     names(margins) <- colnames(X)

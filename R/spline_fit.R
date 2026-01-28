@@ -300,7 +300,6 @@ fit_spline_gaussian <- function(FX,
             future.seed = TRUE,
             future.globals = TRUE
         )
-        cv <- future::value(cv)
     })
 
     # Optimal lambda values for each component of eta
