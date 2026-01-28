@@ -1,22 +1,31 @@
 ###############################################################################
 
-#' Sample cells
+#' Sample cells along trajectory
 #'
-#' @description Sample cells at specified pseudotimes.
+#' @description Sample cells along the trajectory at specified pseudotimes.
 #'
 #' @param sce A \code{SingleCellExperiment}.
 #' @param new_times A vector of pseudotimes to sample at.
+#' @param interpolation Interpolation method, either linear or spline.
 #'
 #' @returns A \code{SingleCellExperiment}.
 #'
+#' @details To sample from the copula at the new times, calibration coefficients
+#' are interpolated at new times using either linear or spline
+#' interpolation. The copula is then sampled from at each new time, and the
+#' margins are converted to those fit to the original counts.
+#'
 #' @export
-sample_cells <- function(sce, new_times) {
+sample_cells <- function(sce,
+                         new_times,
+                         interpolation = c("linear", "spline")) {
     assert_that(
         methods::is(sce, "SingleCellExperiment"),
         "dyn_corr" %in% names(metadata(sce)),
         all(c("margins", "rho") %in% names(metadata(sce)$dyn_corr)),
         is.numeric(new_times)
     )
+    interpolation <- match.arg(interpolation)
 
     dyn_corr <- metadata(sce)$dyn_corr
     genes <- dyn_corr$features
@@ -25,29 +34,44 @@ sample_cells <- function(sce, new_times) {
     counts <- SummarizedExperiment::assay(sce, dyn_corr$assay)
     counts <- Matrix::t(counts[genes, ])
 
-    # Out of the time points at which correlation coefficients were estimated,
-    # use the closest one to the specified time.
-    metacell_pseudotimes <- metadata(sce)$dyn_corr$metacell_sce[[time_col]]
-    min_ix <- sapply(new_times, function(x) {
-        which.min(abs(x - metacell_pseudotimes))
-    })
+    # Interpolate calibration coefficients at new times
+    metacell_pseudotimes <- dyn_corr$metacell_sce[[time_col]]
+    if (interpolation == "spline") {
+        interp_fun <- function(y) {
+            spline_fit <- splines::interpSpline(metacell_pseudotimes, y)
+            stats::predict(spline_fit, new_times)$y
+        }
+    } else {
+        interp_fun <- function(y) {
+            stats::approx(
+                x = metacell_pseudotimes,
+                y = y,
+                xout = new_times,
+                method = "linear"
+            )$y
+        }
+    }
+    eta_int <- apply(dyn_corr$eta, 2, interp_fun)
 
     message("Sampling copula")
     # Each step is very quick, but we generally expect new_times to be large. So
     # a progress bar is still needed, but we'll only update the progress bar
     # every 100 steps to avoid it flashing due to rapid updates.
-    nsteps <- ceiling(length(min_ix) / 100)
+    dstep <- 100
+    nsteps <- ceiling(length(metacell_pseudotimes) / dstep)
     progressr::with_progress({
         pbar <- progressr::progressor(steps = nsteps)
-        U <- lapply(seq_along(min_ix), function(i) {
-            r <- dyn_corr$rho[min_ix[i], , drop = TRUE]
+        U <- lapply(seq_along(metacell_pseudotimes), function(i) {
+            # Convert interpolated calibration coefficients to correlation
+            # coefficients
+            R <- vec2cor(eta_int[i, ])
             copula <- copula::normalCopula(
-                param = r,
+                param = copula::P2p(R),
                 dim = length(genes),
                 dispstr = "un"
             )
             V <- copula::rCopula(1, copula)
-            if (i %% 100 == 0) {
+            if (i %% dstep == 0) {
                 pbar()
             }
             return(V)
@@ -81,16 +105,17 @@ sample_cells <- function(sce, new_times) {
             return(V)
         })
     })
-    counts_sim <- Matrix::t(do.call(cbind, counts_sim))
-    counts_sim <- methods::as(counts_sim, "dgCMatrix")
 
     # Create a SingleCellExperiment with the simulated counts
+    counts_sim <- Matrix::t(do.call(cbind, counts_sim))
+    counts_sim <- methods::as(counts_sim, "dgCMatrix")
     sce_sim <- SingleCellExperiment::SingleCellExperiment(
         assays = list(counts = counts_sim)
     )
     colnames(sce_sim) <- paste0("sim", seq_along(new_times))
     rownames(sce_sim) <- genes
     sce_sim$pseudotime <- new_times
+
     return(sce_sim)
 }
 
