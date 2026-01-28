@@ -16,7 +16,7 @@
     # Ensure that at least max(5, d + 1) points are used to avoid a singular
     # correlation matrix (the d + 1) and to ensure that the estimate is not just
     # noise (the 5).
-    min_pt <- max(5, d + 1)
+    min_pt <- min(max(5, d + 1), length(dx))
     thr <- max(quantile(dx, min_pt / length(dx)), h)
     NX_loc <- NX[dx <= thr, ]
     cor_loc <- stats::cor(NX_loc, method = "pearson")
