@@ -115,11 +115,16 @@ fit_local_gaussian <- function(FX,
         dim(FX)[1] == length(x),
         is.numeric(bandwidths) && all(bandwidths > 0) && all(bandwidths < 1),
         !anyDuplicated(x) && !is.unsorted(x),
-        is.numeric(ncv) && ncv > 1,
         is.numeric(alpha) && all(alpha >= 0) && all(alpha <= 1),
         is.numeric(beta) && all(beta > 0),
+        is.numeric(ncv) && ncv > 1,
         is.numeric(degree) && degree >= 0
     )
+
+    # Require that global model (alpha = 0, beta = 1) is included in the set of
+    # variable bandwidth parameters
+    alpha <- sort(unique(c(0.0, alpha)))
+    beta <- sort(unique(c(1.0, beta)))
 
     # Default control parameters
     defaults <- list(
@@ -241,7 +246,7 @@ fit_local_gaussian <- function(FX,
     if (variable) {
         message("Selecting variable bandwidth parameters")
 
-        # Estimate density function of covariate
+        # Estimate density function of covariates
         x_dens <- kde1d::dkde1d(x, kde1d::kde1d(x))
         # Geometric mean across all covariate values
         G <- exp(mean(log(x_dens)))
@@ -260,7 +265,8 @@ fit_local_gaussian <- function(FX,
         # beta = 1. We then use this value of alpha to refine beta. Note that
         # this set of models includes the global model (alpha = 0, beta = 1).
         progressr::with_progress({
-            total_steps <- (length(alpha) + length(beta)) * length(cv_ix)
+            # We only need to do CV once for (alpha, beta) = (alpha_opt, 1)
+            total_steps <- (length(alpha) + (length(beta) - 1)) * length(cv_ix)
             pbar <- progressr::progressor(steps = total_steps)
 
             # First select alpha with beta = 1
@@ -271,7 +277,7 @@ fit_local_gaussian <- function(FX,
                 FUN = function(r) {
                     a_val <- r[1]
                     j <- r[2]
-                    h_adapt <- get_h_adapt(a_val, 1.0)
+                    h_adapt <- get_h_adapt(a_val, 1)
                     eta_j <- compute_one_eta(
                         NX = NX[-j, ],
                         x = x[-j],
@@ -289,10 +295,14 @@ fit_local_gaussian <- function(FX,
             ll_alpha <- sapply(alpha, function(a) {
                 sum(ll_alpha[1, ][ll_alpha[2, ] == a])
             })
-            alpha_opt <- alpha[which.max(ll_alpha)]
+            ix_opt <- which.max(ll_alpha)
+            alpha_opt <- alpha[ix_opt]
+            # Likelihood for (alpha, beta) = (alpha_opt, 1)
+            ll_alpha_opt <- ll_alpha[ix_opt]
 
-            # Next select beta with alpha = alpha_opt
-            steps <- expand.grid(beta = beta, cv_ix = cv_ix)
+            # Next select beta with alpha = alpha_opt, skipping beta = 1
+            beta <- c(1, beta[beta != 1])
+            steps <- expand.grid(beta = beta[2:length(beta)], cv_ix = cv_ix)
             ll_beta <- future.apply::future_apply(
                 X = steps,
                 MARGIN = 1,
@@ -317,6 +327,7 @@ fit_local_gaussian <- function(FX,
             ll_beta <- sapply(beta, function(b) {
                 sum(ll_beta[1, ][ll_beta[2, ] == b])
             })
+            ll_beta <- c(ll_alpha_opt, ll_beta)
             beta_opt <- beta[which.max(ll_beta)]
         })
         h_final <- get_h_adapt(alpha_opt, beta_opt)
