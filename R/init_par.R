@@ -21,15 +21,20 @@
     NX_loc <- NX[dx <= thr, ]
     cor_loc <- stats::cor(NX_loc, method = "pearson")
 
-    # Avoid super strong initial correlations
-    rho_max <- 0.90
+    # Avoid near perfect initial correlations
+    rho_max <- 0.95
     cor_loc_vec <- copula::P2p(cor_loc)
     is_large <- abs(cor_loc_vec) > rho_max
     cor_loc_vec[is_large] <- sign(cor_loc_vec[is_large]) * rho_max
     cor_loc <- copula::p2P(cor_loc_vec)
 
-    # Ensure final matrix is a valid correlation matrix
-    cor_loc <- Matrix::nearPD(cor_loc, corr = TRUE, base.matrix = TRUE)$mat
+    # Ensure final matrix is a valid correlation matrix. If nearPD does not
+    # converge (which throws a warning), fall back to identity matrix.
+    cor_loc <- tryCatch({
+        Matrix::nearPD(cor_loc, corr = TRUE, base.matrix = TRUE, maxit = 200)$mat
+    }, warning = function(w) {
+        return(diag(d))
+    })
 
     # Convert to vector
     par0 <- cor2vec(cor_loc)
