@@ -23,7 +23,9 @@
 
     # Cap maximum initial correlations
     rho_max <- 0.95
+    print(rho_max)
     max_R <- max(abs(copula::P2p(cor_loc)))
+    print(max_R)
     if (max_R > rho_max) {
         alpha <- rho_max / max_R
         cor_loc <- alpha * cor_loc + (1 - alpha) * diag(d)
