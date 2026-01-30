@@ -70,6 +70,7 @@ vec2cor <- function(v) {
 
     print(rho_max)
     print(max_R)
+    print(any(is.na(v)))
     print(" ")
 
     if (max_R > rho_max) {
