@@ -231,12 +231,6 @@ fit_local_gaussian <- function(FX,
                     )
                     # Log-likelihood of estimated calibration coefficients
                     # at observation j
-                    print(paste("j =", j))
-                    print(paste("h =", h))
-                    print(paste("x0 =", x[j]))
-                    print(paste("NAs =", sum(is.na(eta_j))))
-                    print(" ")
-                    print(" ")
                     ll <- loglik(NX[j, ], eta_j)
                     pbar()
                     return(c(ll, h))

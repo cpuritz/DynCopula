@@ -29,13 +29,17 @@
         cor_loc <- alpha * cor_loc + (1 - alpha) * diag(d)
     }
 
-    # Ensure final matrix is a valid correlation matrix. If nearPD does not
-    # converge (which throws a warning), fall back to identity matrix.
-    cor_loc <- tryCatch({
-        Matrix::nearPD(cor_loc, corr = TRUE, base.matrix = TRUE)$mat
-    }, warning = function(w) {
-        return(diag(d))
-    })
+    # Sometimes the Cholesky decomposition fails, in which case cor2vec will
+    # fail. This generally occurs when cor_loc is numerically not positive
+    # definite, even though it theoretically should be. If this happens, call
+    # nearPD.
+    if (inherits(try(chol(cor_loc), silent = TRUE), "try-error")) {
+        cor_loc <- Matrix::nearPD(cor_loc, corr = TRUE, base.matrix = TRUE)$mat
+        # If there is still an issue, fall back to the identity matrix.
+        if (inherits(try(chol(cor_loc), silent = TRUE), "try-error")) {
+            cor_loc <- diag(d)
+        }
+    }
 
     # Convert to vector
     par0 <- cor2vec(cor_loc)
