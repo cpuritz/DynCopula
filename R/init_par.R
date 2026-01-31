@@ -35,7 +35,8 @@
     # nearPD.
     if (inherits(try(chol(cor_loc), silent = TRUE), "try-error")) {
         cor_loc <- Matrix::nearPD(cor_loc, corr = TRUE, base.matrix = TRUE)$mat
-        # If there is still an issue, fall back to the identity matrix.
+        # If the Cholesky decomposition still fails for some reason, fall back
+        # to the identity matrix.
         if (inherits(try(chol(cor_loc), silent = TRUE), "try-error")) {
             cor_loc <- diag(d)
         }
