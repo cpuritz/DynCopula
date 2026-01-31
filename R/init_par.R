@@ -42,7 +42,7 @@
         }
     }
 
-    # Convert to vector
+    # Convert to vector of calibration coefficients
     par0 <- cor2vec(cor_loc)
     return(par0)
 }
