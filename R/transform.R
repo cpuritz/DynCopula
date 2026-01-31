@@ -67,7 +67,6 @@ vec2cor <- function(v) {
 
     # Cap magnitude of correlations to rho_max
     max_R <- max(abs(copula::P2p(R)))
-
     if (max_R > rho_max) {
         alpha <- rho_max / max_R
         R <- alpha * R + (1 - alpha) * diag(dim(R)[1])
