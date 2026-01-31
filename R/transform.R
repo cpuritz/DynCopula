@@ -15,7 +15,7 @@ cor2vec <- function(R) {
 
     d <- dim(R)[1]
 
-    # Compute Cholesky factor
+    # Compute lower-triangular Cholesky factor
     L <- t(chol(R))
 
     # Parametrize the Cholesky factor to have a real and positive diagonal
