@@ -36,6 +36,7 @@ A list with the following components:
   \item \code{lambda}: The optimal smoothing parameters.
   \item \code{df}: The optimal degrees of freedom.
   \item \code{beta}: Estimated basis coefficients.
+  \item \code{cv}: Cross-validation results.
 }
 }
 \description{

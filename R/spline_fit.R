@@ -7,9 +7,10 @@
 #' @param FX Matrix of pseudo-observations at covariate values.
 #' @param x Vector of covariate values corresponding to \code{FX}. Must be
 #' sorted and have no duplicates.
-#' @param lambda Vector of smoothing parameters.
+#' @param lambda Vector of smoothing parameters. Default is
+#' \code{10^(seq(-5, 5, length.out = 7))}.
 #' @param lambda_blocks Number of smoothing blocks. Default is \code{1}.
-#' @param df Vector of degrees of freedom.
+#' @param df Vector of degrees of freedom. Default is \code{c(10, 50, 100)}.
 #' @param nfold Number of folds for cross-validation. Default is \code{10}.
 #' @param cores Number of cores to use. Default is \code{1}.
 #' @param control A \code{list} of control parameters for optimization.
@@ -43,14 +44,15 @@
 #'   \item \code{rho}: Matrix of estimated pairwise correlation coefficients.
 #'   \item \code{lambda}: The optimal smoothing parameter.
 #'   \item \code{df}: The optimal degrees of freedom.
+#'   \item \code{cv}: Cross-validation results
 #' }
 #'
 #' @export
 fit_spline_gaussian <- function(FX,
                                 x,
-                                lambda,
+                                lambda = 10^(seq(-5, 5, length.out = 7)),
                                 lambda_blocks = 1,
-                                df,
+                                df = c(10, 50, 100),
                                 nfold = 10,
                                 cores = 1,
                                 control = list()) {
@@ -179,6 +181,7 @@ fit_spline_gaussian <- function(FX,
 #'   \item \code{lambda}: The optimal smoothing parameters.
 #'   \item \code{df}: The optimal degrees of freedom.
 #'   \item \code{beta}: Estimated basis coefficients.
+#'   \item \code{cv}: Cross-validation results.
 #' }
 .spline_fit <- function(NX,
                         x,
@@ -302,9 +305,11 @@ fit_spline_gaussian <- function(FX,
         )
     })
 
+    cv <- unlist(cv)
+    cv_df <- cbind(combs, data.frame(ll = cv))
+
     # Optimal lambda values for each component of eta
-    ix_opt <- which.max(unlist(cv))
-    lambda_opt <- unlist(combs[ix_opt, seq_len(nblock)])[lambda_blocks]
+    lambda_opt <- unlist(combs[which.max(cv), seq_len(nblock)])[lambda_blocks]
 
     # Optimal basis size
     df_opt <- combs[ix_opt, dim(combs)[2]]
@@ -350,7 +355,8 @@ fit_spline_gaussian <- function(FX,
         rho = Rhat,
         lambda = lambda_opt,
         df = df_opt,
-        beta = beta_opt
+        beta = beta_opt,
+        cv = cv_df
     ))
 }
 

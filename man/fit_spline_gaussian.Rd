@@ -7,9 +7,9 @@
 fit_spline_gaussian(
   FX,
   x,
-  lambda,
+  lambda = 10^(seq(-5, 5, length.out = 7)),
   lambda_blocks = 1,
-  df,
+  df = c(10, 50, 100),
   nfold = 10,
   cores = 1,
   control = list()
@@ -21,11 +21,12 @@ fit_spline_gaussian(
 \item{x}{Vector of covariate values corresponding to \code{FX}. Must be
 sorted and have no duplicates.}
 
-\item{lambda}{Vector of smoothing parameters.}
+\item{lambda}{Vector of smoothing parameters. Default is
+\code{10^(seq(-5, 5, length.out = 7))}.}
 
 \item{lambda_blocks}{Number of smoothing blocks. Default is \code{1}.}
 
-\item{df}{Vector of degrees of freedom.}
+\item{df}{Vector of degrees of freedom. Default is \code{c(10, 50, 100)}.}
 
 \item{nfold}{Number of folds for cross-validation. Default is \code{10}.}
 
@@ -42,6 +43,7 @@ A list with the following components:
   \item \code{rho}: Matrix of estimated pairwise correlation coefficients.
   \item \code{lambda}: The optimal smoothing parameter.
   \item \code{df}: The optimal degrees of freedom.
+  \item \code{cv}: Cross-validation results
 }
 }
 \description{
