@@ -4,7 +4,7 @@
 \alias{.spline_fit}
 \title{Spline estimation of dynamic Gaussian copula model}
 \usage{
-.spline_fit(NX, x, lambda, lambda_blocks, df, nfold, control, cl)
+.spline_fit(NX, x, lambda, lambda_blocks, df, nfold, control)
 }
 \arguments{
 \item{NX}{Matrix of normal-transformed pseudo-observations at covariate
@@ -23,8 +23,6 @@ block has its own smoothing parameter.}
 \item{nfold}{Number of folds for cross-validation.}
 
 \item{control}{A \code{list} of control parameters for optimization.}
-
-\item{cl}{A cluster for parallel computations.}
 }
 \value{
 A list with the following components:

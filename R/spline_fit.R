@@ -117,8 +117,7 @@ fit_spline_gaussian <- function(FX,
         lambda_blocks = 1L,
         df = df,
         nfold = nfold,
-        control = control,
-        cl = cl
+        control = control
     )
 
     if (lambda_blocks == 1L) {
@@ -146,8 +145,7 @@ fit_spline_gaussian <- function(FX,
         lambda_blocks = groups,
         df = res_pilot$df,
         nfold = nfold,
-        control = control,
-        cl = cl
+        control = control
     )
     res_spline$beta <- NULL
     return(res_spline)
@@ -170,7 +168,6 @@ fit_spline_gaussian <- function(FX,
 #' @param df Vector of degrees of freedom.
 #' @param nfold Number of folds for cross-validation.
 #' @param control A \code{list} of control parameters for optimization.
-#' @param cl A cluster for parallel computations.
 #'
 #' @return A list with the following components:
 #' \itemize{
@@ -189,8 +186,7 @@ fit_spline_gaussian <- function(FX,
                         lambda_blocks,
                         df,
                         nfold,
-                        control,
-                        cl) {
+                        control) {
     # Dimension
     d <- dim(NX)[2]
     npar <- choose(d, 2)
