@@ -70,7 +70,7 @@ fit_spline_gaussian <- function(FX,
         is.list(control)
     )
     lambda_blocks <- as.integer(lambda_blocks)
-    nfold <- as.integer(cores)
+    nfold <- as.integer(nfold)
 
     # Set up futures plan
     cl <- parallel::makeCluster(as.integer(cores))
@@ -212,13 +212,12 @@ fit_spline_gaussian <- function(FX,
         return(copula_ll - margin_ll)
     }
 
-    get_basis <- function(x, K) {
-        splines::ns(x, df = K, intercept = TRUE)
-    }
-
     # K-fold cross validation
-    folds <- seq_len(nfold)
-    fold_ids <- rep(folds, ceiling(length(x) / nfold))[1:length(x)]
+    fold_ids <- cut(seq_along(x), breaks = nfold, labels = FALSE)
+
+    # Knot boundary extension
+    knot_eps <- 0.05
+    boundary_knot <- c(-knot_eps, 1 + knot_eps)
 
     # Number of smoothing blocks
     nblock <- length(unique(lambda_blocks))
@@ -267,15 +266,20 @@ fit_spline_gaussian <- function(FX,
                 df_i <- pars_i[length(pars_i)]
 
                 cv_i <- 0
-                for (fold in folds) {
+                for (fold in seq_len(nfold)) {
                     test_ix <- which(fold_ids == fold)
-                    train_ix <- setdiff(seq_along(x), test_ix)
+                    train_ix <- which(fold_ids != fold)
 
                     # Spline basis matrices
-                    B_train <- get_basis(x[train_ix], df_i)
-                    B_test <- get_basis(x[test_ix], df_i)
+                    B <- splines::ns(
+                        x = x,
+                        df = df_i,
+                        intercept = TRUE,
+                        Boundary.knots = boundary_knot
+                    )
+                    B_train <- B[train_ix, , drop = FALSE]
+                    B_test <- B[test_ix, , drop = FALSE]
 
-                    # Initial estimate
                     par0 <- matrix(0, nrow = df_i, ncol = npar)
 
                     # Fit using training data
@@ -307,15 +311,21 @@ fit_spline_gaussian <- function(FX,
 
     cv <- unlist(cv)
     cv_df <- cbind(combs, data.frame(ll = cv))
+    comb_opt <- unlist(combs[which.max(cv), ])
 
     # Optimal lambda values for each component of eta
-    lambda_opt <- unlist(combs[which.max(cv), seq_len(nblock)])[lambda_blocks]
+    lambda_opt <- comb_opt[seq_len(nblock)][lambda_blocks]
 
     # Optimal basis size
-    df_opt <- combs[ix_opt, dim(combs)[2]]
+    df_opt <- comb_opt[nblock + 1L]
 
     # Estimation using the CV optimal lambda and df
-    B <- get_basis(x, df_opt)
+    B <- splines::ns(
+        x = x,
+        df = df_opt,
+        intercept = TRUE,
+        Boundary.knots = boundary_knot
+    )
     par0 <- matrix(0, nrow = df_opt, ncol = npar)
     beta_opt <- fit_fun(
         par0 = par0,
