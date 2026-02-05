@@ -114,7 +114,7 @@ def _spline_loss(
 	# Negative log likelihood
 	nll = -torch.sum(_log_mvn_density(NX, eta.T.contiguous()))
 	
-	# Penalty term = 0.5 * lam * trace(beta.T * S * beta)
+	# Penalty term = lambda/2 * trace(beta.T * S * beta)
 	pen = 0.5 * lam * (beta * (S @ beta)).sum()
 	
 	# Spline loss
@@ -131,7 +131,7 @@ def pen_mat(K: int) -> torch.Tensor:
 	Parameters
 	----------
 	K : int
-		Size of matrix.
+		Degrees of freedom.
 		
 	Returns
 	-------
