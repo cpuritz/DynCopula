@@ -8,7 +8,6 @@ fit_spline_gaussian(
   FX,
   x,
   lambda = 10^(seq(-5, 5, length.out = 7)),
-  lambda_blocks = 1,
   df = c(10, 50, 100),
   nfold = 10,
   cores = 1,
@@ -23,8 +22,6 @@ sorted and have no duplicates.}
 
 \item{lambda}{Vector of smoothing parameters. Default is
 \code{10^(seq(-5, 5, length.out = 7))}.}
-
-\item{lambda_blocks}{Number of smoothing blocks. Default is \code{1}.}
 
 \item{df}{Vector of degrees of freedom. Default is \code{c(10, 50, 100)}.}
 
@@ -51,10 +48,7 @@ Fit a dynamic Gaussian copula model using penalized splines.
 }
 \details{
 Cross-validation is used to select the values of \code{lambda} and
-\code{df}. An initial estimate is first computed by cross-validation over all
-values of \code{lambda} and \code{df}. If \code{lambda_blocks > 1}, a second
-sweep is performed to choose block-specific smoothing parameters, with the
-parameter set of size \code{|lambda|^(lambda_blocks)}.
+\code{df}.
 
 Optimization is performed using L-BFGS. The \code{control} argument
 is a list that supplies control parameters for optimization. The following

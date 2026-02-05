@@ -9,17 +9,13 @@
 #' sorted and have no duplicates.
 #' @param lambda Vector of smoothing parameters. Default is
 #' \code{10^(seq(-5, 5, length.out = 7))}.
-#' @param lambda_blocks Number of smoothing blocks. Default is \code{1}.
 #' @param df Vector of degrees of freedom. Default is \code{c(10, 50, 100)}.
 #' @param nfold Number of folds for cross-validation. Default is \code{10}.
 #' @param cores Number of cores to use. Default is \code{1}.
 #' @param control A \code{list} of control parameters for optimization.
 #'
 #' @details Cross-validation is used to select the values of \code{lambda} and
-#' \code{df}. An initial estimate is first computed by cross-validation over all
-#' values of \code{lambda} and \code{df}. If \code{lambda_blocks > 1}, a second
-#' sweep is performed to choose block-specific smoothing parameters, with the
-#' parameter set of size \code{|lambda|^(lambda_blocks)}.
+#' \code{df}.
 #'
 #' Optimization is performed using L-BFGS. The \code{control} argument
 #' is a list that supplies control parameters for optimization. The following
@@ -51,7 +47,6 @@
 fit_spline_gaussian <- function(FX,
                                 x,
                                 lambda = 10^(seq(-5, 5, length.out = 7)),
-                                lambda_blocks = 1,
                                 df = c(10, 50, 100),
                                 nfold = 10,
                                 cores = 1,
@@ -63,13 +58,11 @@ fit_spline_gaussian <- function(FX,
         !is.unsorted(x),
         dim(FX)[1] == length(x),
         is.vector(lambda, mode = "numeric"),
-        is.numeric(lambda_blocks) && lambda_blocks >= 1,
         is.vector(df, mode = "numeric") && all(df >= 1),
         is.numeric(nfold) && nfold >= 2,
         is.numeric(cores) && cores >= 1,
         is.list(control)
     )
-    lambda_blocks <- as.integer(lambda_blocks)
     nfold <- as.integer(nfold)
 
     # Set up futures plan
@@ -105,88 +98,6 @@ fit_spline_gaussian <- function(FX,
     # Normal-transform pseudo-observations
     NX <- stats::qnorm(FX)
 
-    if (lambda_blocks != 1L) {
-        message("Fitting pilot estimate")
-    }
-
-    # First fit pilot estimate
-    res_pilot <- .spline_fit(
-        NX = NX,
-        x = x,
-        lambda = lambda,
-        lambda_blocks = 1L,
-        df = df,
-        nfold = nfold,
-        control = control
-    )
-
-    if (lambda_blocks == 1L) {
-        res_pilot$beta <- NULL
-        return(res_pilot)
-    }
-
-    message("Fitting multiple smoothing blocks")
-
-    # Quantify roughness of pilot curve estimates
-    D2 <- diff(diff(diag(dim(res_pilot$beta)[1])))
-    S <- t(D2) %*% D2
-    roughness <- diag(t(res_pilot$beta) %*% S %*% res_pilot$beta)
-
-    # Identify clusters of curves by roughness
-    sink <- utils::capture.output(
-        groups <- mclust::Mclust(roughness, G = lambda_blocks)$classification
-    )
-
-    # Fit using multiple smoothing blocks using pilot df
-    res_spline <- .spline_fit(
-        NX = NX,
-        x = x,
-        lambda = lambda,
-        lambda_blocks = groups,
-        df = res_pilot$df,
-        nfold = nfold,
-        control = control
-    )
-    res_spline$beta <- NULL
-    return(res_spline)
-}
-
-###############################################################################
-
-#' Spline estimation of dynamic Gaussian copula model
-#'
-#' @description Fit a dynamic Gaussian copula model using penalized splines.
-#' Internal function.
-#'
-#' @param NX Matrix of normal-transformed pseudo-observations at covariate
-#' values.
-#' @param x Vector of covariate values corresponding to \code{FX}. Must be
-#' sorted and have no duplicates.
-#' @param lambda Vector of smoothing parameters.
-#' @param lambda_blocks A vector of integers specifying block assignments. Each
-#' block has its own smoothing parameter.
-#' @param df Vector of degrees of freedom.
-#' @param nfold Number of folds for cross-validation.
-#' @param control A \code{list} of control parameters for optimization.
-#'
-#' @return A list with the following components:
-#' \itemize{
-#'   \item \code{x}: The input argument \code{x}.
-#'   \item \code{NX}: Normal-transformed pseudo-observations.
-#'   \item \code{eta}: Matrix of estimated calibration coefficients.
-#'   \item \code{rho}: Matrix of estimated pairwise correlation coefficients.
-#'   \item \code{lambda}: The optimal smoothing parameters.
-#'   \item \code{df}: The optimal degrees of freedom.
-#'   \item \code{beta}: Estimated basis coefficients.
-#'   \item \code{cv}: Cross-validation results.
-#' }
-.spline_fit <- function(NX,
-                        x,
-                        lambda,
-                        lambda_blocks,
-                        df,
-                        nfold,
-                        control) {
     # Dimension
     d <- dim(NX)[2]
     npar <- choose(d, 2)
@@ -215,12 +126,12 @@ fit_spline_gaussian <- function(FX,
     knot_eps <- 0.05
     boundary_knot <- c(-knot_eps, 1 + knot_eps)
 
-    # Number of smoothing blocks
-    nblock <- length(unique(lambda_blocks))
-
     # All combinations of lambda and df
-    combs <- expand.grid(c(rep(list(lambda), nblock), list(df = df)))
-    colnames(combs)[seq_len(nblock)] <- paste0("lambda", seq_len(nblock))
+    combs <- expand.grid(
+        lambda_ix = seq_along(lambda),
+        df_ix = seq_along(df),
+        fold = seq_len(nfold)
+    )
     ncomb <- dim(combs)[1]
 
     # Since Python functions are not serializable, we can't load the
@@ -253,67 +164,67 @@ fit_spline_gaussian <- function(FX,
         cv <- future.apply::future_lapply(
             X = seq_len(ncomb),
             FUN = function(i) {
-                pars_i <- unlist(combs[i, ])
-                # Lambda value for each block
-                group_lambdas <- pars_i[seq_len(nblock)]
-                # Lambda value for each component of eta
-                lambda_i <- group_lambdas[lambda_blocks]
-                # Basis size
-                df_i <- pars_i[length(pars_i)]
+                test_ix <- which(fold_ids == combs$fold[i])
+                train_ix <- which(fold_ids != combs$fold[i])
 
-                cv_i <- 0
-                for (fold in seq_len(nfold)) {
-                    test_ix <- which(fold_ids == fold)
-                    train_ix <- which(fold_ids != fold)
+                lam_i <- lambda[combs$lambda_ix[i]]
+                df_i <- df[combs$df_ix[i]]
 
-                    # Spline basis matrices
-                    B <- splines::ns(
-                        x = x,
-                        df = df_i,
-                        intercept = TRUE,
-                        Boundary.knots = boundary_knot
-                    )
-                    B_train <- B[train_ix, , drop = FALSE]
-                    B_test <- B[test_ix, , drop = FALSE]
+                # Spline basis matrices
+                B <- splines::ns(
+                    x = x,
+                    df = df_i,
+                    intercept = TRUE,
+                    Boundary.knots = boundary_knot
+                )
+                B_train <- B[train_ix, , drop = FALSE]
+                B_test <- B[test_ix, , drop = FALSE]
 
-                    par0 <- matrix(0, nrow = df_i, ncol = npar)
+                # Initial coefficient estimates
+                par0 <- matrix(0, nrow = df_i, ncol = npar)
 
-                    # Fit using training data
-                    beta_est <- fit_fun(
-                        par0 = par0,
-                        x = x[train_ix],
-                        NX = NX[train_ix, , drop = FALSE],
-                        B = B_train,
-                        lam = lambda_i,
-                        control = control
-                    )
+                # Fit using training data
+                beta_est <- fit_fun(
+                    par0 = par0,
+                    x = x[train_ix],
+                    NX = NX[train_ix, , drop = FALSE],
+                    B = B_train,
+                    lam = lam_i,
+                    control = control
+                )
 
-                    # Predictions for test data
-                    H_test <- B_test %*% beta_est
+                # Predictions for test data
+                H_test <- B_test %*% beta_est
 
-                    # Cross-validated likelihood criterion
-                    ll <- sum(sapply(seq_along(test_ix), function(j) {
-                        loglik(NX[test_ix[j], ], H_test[j, ])
-                    }))
-                    cv_i <- cv_i + ll
-                }
+                # Cross-validated likelihood criterion
+                ll <- sum(sapply(seq_along(test_ix), function(j) {
+                    loglik(NX[test_ix[j], ], H_test[j, ])
+                }))
                 pbar()
-                return(cv_i)
+                return(ll)
             },
             future.seed = TRUE,
             future.globals = TRUE
         )
     })
 
-    cv <- unlist(cv)
-    cv_df <- cbind(combs, data.frame(ll = cv))
-    comb_opt <- unlist(combs[which.max(cv), ])
+    # Optimal hyperparameters
+    ll_sum <- tapply(
+        X = unlist(cv),
+        INDEX = list(combs$lambda_ix, combs$df_ix),
+        FUN = sum
+    )
+    cv_df <- as.data.frame(as.table(ll_sum))
+    names(cv_df) <- c("lambda_ix", "df_ix", "ll")
+    comb_opt <- cv_df[which.max(cv_df$ll), ]
+    lambda_opt <- lambda[as.integer(as.character(comb_opt$lambda_ix))]
+    df_opt <- df[as.integer(as.character(comb_opt$df_ix))]
 
-    # Optimal lambda values for each component of eta
-    lambda_opt <- comb_opt[seq_len(nblock)][lambda_blocks]
-
-    # Optimal basis size
-    df_opt <- comb_opt[nblock + 1L]
+    cv_df <- data.frame(
+        lambda = lambda[cv_df$lambda_ix],
+        df = df[cv_df$df_ix],
+        ll = cv_df$ll
+    )
 
     # Estimation using the CV optimal lambda and df
     B <- splines::ns(
@@ -340,7 +251,7 @@ fit_spline_gaussian <- function(FX,
     }))
 
     # Ensure consistent shape of Rhat across all dimensions
-    if (d == 2) {
+    if (d == 2L) {
         Rhat <- t(Rhat)
     }
 
@@ -361,7 +272,6 @@ fit_spline_gaussian <- function(FX,
         rho = Rhat,
         lambda = lambda_opt,
         df = df_opt,
-        beta = beta_opt,
         cv = cv_df
     ))
 }

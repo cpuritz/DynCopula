@@ -10,7 +10,7 @@ def fit_gaussian_spline(
 	x: np.ndarray,
 	NX: np.ndarray,
 	B: np.ndarray,
-    lam: np.ndarray,
+    lam: float,
     control: Mapping[str, Union[float, int]]
 ) -> float:
 	"""
@@ -27,8 +27,8 @@ def fit_gaussian_spline(
 		correspond to `x`.
 	B: np.ndarray
         Basis matrix. Shape `(n, K)`.
-	lam: np.ndarray
-	    Smoothing parameter vector. Shape `(p,)`.
+	lam: float
+	    Smoothing parameter vector.
 	control : Mapping[str, float | int]
 		Optimization control parameters.
 
@@ -43,6 +43,7 @@ def fit_gaussian_spline(
 	history_size = int(control["history_size"])
 	tolerance_grad = float(control["tolerance_grad"])
 	tolerance_change = float(control["tolerance_change"])
+	lam = float(lam)
 
 	# Set up tensors
 	par0 = np.atleast_1d(par0)
@@ -52,8 +53,7 @@ def fit_gaussian_spline(
 	x = torch.tensor(x, dtype = torch.float64)
 	NX = torch.tensor(NX, dtype = torch.float64)
 	B = torch.tensor(B, dtype = torch.float64)
-	lam = torch.tensor(lam, dtype = torch.float64)
-	
+
 	# Precompute fixed penalty matrix
 	S = pen_mat(B.shape[1])
     
@@ -84,7 +84,7 @@ def _spline_loss(
 	NX: torch.tensor,
 	B: torch.Tensor,
 	S: torch.Tensor,
-	lam: torch.Tensor
+	lam: float
 ) -> torch.Tensor:
 	"""
 	Compute the spline loss for a Gaussian copula.
@@ -99,8 +99,8 @@ def _spline_loss(
 	    Basis matrix. Shape `(n, K)`.
 	S : torch.Tensor
 	    Penalty matrix. Shape `(K, K)`.
-	lam : torch.Tensor
-	    Smoothing parameter vector. Shape `(p,)`.
+	lam : float
+	    Smoothing parameter.
 	
 	Returns
 	-------
@@ -114,8 +114,8 @@ def _spline_loss(
 	# Negative log likelihood
 	nll = -torch.sum(_log_mvn_density(NX, eta.T.contiguous()))
 	
-	# Penalty term = trace(diag(lam) * (beta.T * S * beta))
-	pen = 0.5 * (lam * (beta * (S @ beta)).sum(dim = 0)).sum()
+	# Penalty term = 0.5 * lam * trace(beta.T * S * beta)
+	pen = 0.5 * lam * (beta * (S @ beta)).sum()
 	
 	# Spline loss
 	loss = nll + pen
