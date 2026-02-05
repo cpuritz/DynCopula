@@ -218,7 +218,7 @@ fit_spline_gaussian <- function(FX,
         )
     })
 
-    # Optimal hyperparameters
+    # Sum likelihoods across folds
     ll_sum <- tapply(
         X = unlist(cv),
         INDEX = list(combs$lambda_ix, combs$df_ix),
@@ -226,9 +226,12 @@ fit_spline_gaussian <- function(FX,
     )
     cv_df <- as.data.frame(as.table(ll_sum))
     names(cv_df) <- c("lambda_ix", "df_ix", "ll")
-    comb_opt <- cv_df[which.max(cv_df$ll), ]
-    lambda_opt <- lambda[as.integer(as.character(comb_opt$lambda_ix))]
-    df_opt <- df[as.integer(as.character(comb_opt$df_ix))]
+    cv_df$lambda_ix <- as.integer(as.character(cv_df$lambda_ix))
+    cv_df$df_ix <- as.integer(as.character(cv_df$df_ix))
+
+    # Optimal hyperparameters
+    lambda_opt <- cv_df[which.max(cv_df$ll), "lambda_ix"]
+    df_opt <- cv_df[which.max(cv_df$ll), "df_ix"]
 
     cv_df <- data.frame(
         lambda = lambda[cv_df$lambda_ix],
