@@ -17,8 +17,8 @@ fit_spline_gaussian(
 \arguments{
 \item{FX}{Matrix of pseudo-observations at covariate values.}
 
-\item{x}{Vector of covariate values corresponding to \code{FX}. Must be
-sorted and have no duplicates.}
+\item{x}{Vector of covariate values corresponding to \code{FX}. Must have no
+duplicates.}
 
 \item{lambda}{Vector of smoothing parameters. Default is
 \code{10^(seq(-5, 5, length.out = 7))}.}
@@ -34,7 +34,8 @@ sorted and have no duplicates.}
 \value{
 A list with the following components:
 \itemize{
-  \item \code{x}: The input argument \code{x}.
+  \item \code{x}: Covariate values at which correlation coefficients were
+  estimated.
   \item \code{NX}: Normal-transformed pseudo-observations.
   \item \code{eta}: Matrix of estimated calibration coefficients.
   \item \code{rho}: Matrix of estimated pairwise correlation coefficients.

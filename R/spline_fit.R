@@ -5,8 +5,8 @@
 #' @description Fit a dynamic Gaussian copula model using penalized splines.
 #'
 #' @param FX Matrix of pseudo-observations at covariate values.
-#' @param x Vector of covariate values corresponding to \code{FX}. Must be
-#' sorted and have no duplicates.
+#' @param x Vector of covariate values corresponding to \code{FX}. Must have no
+#' duplicates.
 #' @param lambda Vector of smoothing parameters. Default is
 #' \code{10^(seq(-5, 5, length.out = 7))}.
 #' @param df Vector of degrees of freedom. Default is \code{c(10, 50, 100)}.
@@ -34,7 +34,8 @@
 #'
 #' @return A list with the following components:
 #' \itemize{
-#'   \item \code{x}: The input argument \code{x}.
+#'   \item \code{x}: Covariate values at which correlation coefficients were
+#'   estimated.
 #'   \item \code{NX}: Normal-transformed pseudo-observations.
 #'   \item \code{eta}: Matrix of estimated calibration coefficients.
 #'   \item \code{rho}: Matrix of estimated pairwise correlation coefficients.
@@ -55,7 +56,6 @@ fit_spline_gaussian <- function(FX,
         is.numeric(FX) && is.matrix(FX),
         is.vector(x, mode = "numeric"),
         !anyDuplicated(x),
-        !is.unsorted(x),
         dim(FX)[1] == length(x),
         is.vector(lambda, mode = "numeric") && all(lambda > 0),
         is.vector(df, mode = "numeric") && all(df >= 1),
@@ -95,36 +95,51 @@ fit_spline_gaussian <- function(FX,
     control$max_itr <- as.integer(control$max_itr)
     control$history_size <- as.integer(control$history_size)
 
-    # Normal-transform pseudo-observations
-    NX <- stats::qnorm(FX)
-
-    # Dimension
-    d <- dim(NX)[2]
+    # Dimension and number of parameters
+    d <- dim(FX)[2]
     npar <- choose(d, 2)
+
+    # Sort covariates if needed
+    if (is.unsorted(x)) {
+        ord <- order(x)
+        x <- x[ord]
+        FX <- FX[ord, ]
+    }
 
     # Scale covariates to [0, 1]
     min_x <- x[1]
     dx <- x[length(x)] - min_x
     x <- (x - min_x) / dx
 
+    # Normal-transform pseudo-observations
+    NX <- stats::qnorm(FX)
+
     # Gaussian copula log likelihood
-    loglik <- function(NX, eta) {
+    loglik <- function(U, eta) {
         copula_ll <- mvtnorm::dmvnorm(
-            x = NX,
+            x = U,
             sigma = vec2cor(eta),
             log = TRUE,
             checkSymmetry = FALSE
         )
-        margin_ll <- sum(stats::dnorm(NX, log = TRUE))
+        margin_ll <- sum(stats::dnorm(U, log = TRUE))
         return(copula_ll - margin_ll)
     }
 
-    # K-fold cross validation
+    # K-fold cross validation with contiguous blocks
     fold_ids <- cut(seq_along(x), breaks = nfold, labels = FALSE)
 
-    # Knot boundary extension
-    knot_eps <- 0.05
-    boundary_knot <- c(-knot_eps, 1 + knot_eps)
+    # Spline basis matrix
+    get_basis <- function(x, df) {
+        # Knot boundary extension
+        knot_eps <- 0.05
+        splines::ns(
+            x = x,
+            df = df,
+            intercept = TRUE,
+            Boundary.knots = c(-knot_eps, 1 + knot_eps)
+        )
+    }
 
     # All combinations of lambda and df
     combs <- expand.grid(
@@ -171,12 +186,7 @@ fit_spline_gaussian <- function(FX,
                 df_i <- df[combs$df_ix[i]]
 
                 # Spline basis matrices
-                B <- splines::ns(
-                    x = x,
-                    df = df_i,
-                    intercept = TRUE,
-                    Boundary.knots = boundary_knot
-                )
+                B <- get_basis(x, df_i)
                 B_train <- B[train_ix, , drop = FALSE]
                 B_test <- B[test_ix, , drop = FALSE]
 
@@ -227,12 +237,7 @@ fit_spline_gaussian <- function(FX,
     )
 
     # Estimation using the CV optimal lambda and df
-    B <- splines::ns(
-        x = x,
-        df = df_opt,
-        intercept = TRUE,
-        Boundary.knots = boundary_knot
-    )
+    B <- get_basis(x, df_opt)
     par0 <- matrix(0, nrow = df_opt, ncol = npar)
     beta_opt <- fit_fun(
         par0 = par0,
