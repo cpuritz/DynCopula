@@ -179,19 +179,17 @@ fit_spline_gaussian <- function(FX,
         cv <- future.apply::future_lapply(
             X = seq_len(ncomb),
             FUN = function(i) {
+                # Train and test folds
                 test_ix <- which(fold_ids == combs$fold[i])
                 train_ix <- which(fold_ids != combs$fold[i])
 
-                lam_i <- lambda[combs$lambda_ix[i]]
-                df_i <- df[combs$df_ix[i]]
-
                 # Spline basis matrices
-                B <- get_basis(x, df_i)
+                B <- get_basis(x, df[combs$df_ix[i]])
                 B_train <- B[train_ix, , drop = FALSE]
                 B_test <- B[test_ix, , drop = FALSE]
 
                 # Initial coefficient estimates
-                par0 <- matrix(0, nrow = df_i, ncol = npar)
+                par0 <- matrix(0, nrow = dim(B)[2], ncol = npar)
 
                 # Fit using training data
                 beta_est <- fit_fun(
@@ -199,7 +197,7 @@ fit_spline_gaussian <- function(FX,
                     x = x[train_ix],
                     NX = NX[train_ix, , drop = FALSE],
                     B = B_train,
-                    lam = lam_i,
+                    lam = lambda[combs$lambda_ix[i]],
                     control = control
                 )
 
