@@ -10,7 +10,7 @@
 #' @param lambda Vector of smoothing parameters. Default is
 #' \code{10^(seq(-5, 5, length.out = 7))}.
 #' @param df Vector of degrees of freedom. Default is \code{c(10, 50, 100)}.
-#' @param nfold Number of folds for cross-validation. Default is \code{10}.
+#' @param nfold Number of folds for cross-validation. Default is \code{5}.
 #' @param cores Number of cores to use. Default is \code{1}.
 #' @param control A \code{list} of control parameters for optimization.
 #'
@@ -40,7 +40,7 @@
 #'   \item \code{rho}: Matrix of estimated pairwise correlation coefficients.
 #'   \item \code{lambda}: The optimal smoothing parameter.
 #'   \item \code{df}: The optimal degrees of freedom.
-#'   \item \code{cv}: Cross-validation results
+#'   \item \code{cv}: Cross-validation results.
 #' }
 #'
 #' @export
@@ -48,7 +48,7 @@ fit_spline_gaussian <- function(FX,
                                 x,
                                 lambda = 10^(seq(-5, 5, length.out = 7)),
                                 df = c(10, 50, 100),
-                                nfold = 10,
+                                nfold = 5,
                                 cores = 1,
                                 control = list()) {
     assert_that(
@@ -57,7 +57,7 @@ fit_spline_gaussian <- function(FX,
         !anyDuplicated(x),
         !is.unsorted(x),
         dim(FX)[1] == length(x),
-        is.vector(lambda, mode = "numeric"),
+        is.vector(lambda, mode = "numeric") && all(lambda > 0),
         is.vector(df, mode = "numeric") && all(df >= 1),
         is.numeric(nfold) && nfold >= 2,
         is.numeric(cores) && cores >= 1,
