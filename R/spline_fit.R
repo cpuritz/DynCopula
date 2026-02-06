@@ -117,7 +117,7 @@ fit_spline_gaussian <- function(FX,
     # Gaussian copula log likelihood
     loglik <- function(U, eta) {
         if (any(is.na(eta) | is.nan(eta))) {
-            return(-Inf)
+            return(-1e12)
         }
         copula_ll <- mvtnorm::dmvnorm(
             x = U,
