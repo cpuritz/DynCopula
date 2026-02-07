@@ -128,7 +128,7 @@ fit_spline_gaussian <- function(FX,
         return(copula_ll - margin_ll)
     }
 
-    # K-fold cross validation with contiguous blocks
+    # K-fold cross validation with equal-sized contiguous blocks
     fold_ids <- cut(seq_along(x), breaks = nfold, labels = FALSE)
 
     # Spline basis matrix
