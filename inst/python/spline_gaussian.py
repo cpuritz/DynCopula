@@ -61,7 +61,7 @@ def fit_gaussian_spline(
 	B = torch.tensor(B, dtype = dtype)
 
 	# Precompute fixed penalty matrix
-	S = pen_mat(B.shape[1])
+	S = pen_mat(K = B.shape[1], dtype = dtype)
     
 	optimizer = torch.optim.LBFGS(
 		[beta],
@@ -74,7 +74,14 @@ def fit_gaussian_spline(
     
 	def closure():
 		optimizer.zero_grad()
-		loss = _spline_loss(beta, NX, B, S, lam)
+		loss = _spline_loss(
+		    beta = beta,
+		    NX = NX,
+		    B = B,
+		    S = S,
+		    lam = lam,
+		    dtype = dtype
+		)
 		loss.backward()
 		return loss
     
@@ -90,7 +97,8 @@ def _spline_loss(
 	NX: torch.tensor,
 	B: torch.Tensor,
 	S: torch.Tensor,
-	lam: float
+	lam: float,
+	dtype: torch.dtype
 ) -> torch.Tensor:
 	"""
 	Compute the spline loss for a Gaussian copula.
@@ -107,6 +115,8 @@ def _spline_loss(
 	    Penalty matrix. Shape `(K, K)`.
 	lam : float
 	    Smoothing parameter.
+	dtype : torch.dtype
+	    Floating-point precision.
 	
 	Returns
 	-------
