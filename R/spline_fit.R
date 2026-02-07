@@ -29,6 +29,8 @@
 #'   \code{1e-7}.
 #'   \item \code{tolerance_change} Termination tolerance for log-likelihood.
 #'   Default is \code{1e-9}.
+#'   \item \code{precision}: Floating precision. Either \code{"float32"} or
+#'   \code{"float64"}. Default is \code{"float32"}.
 #' }
 #'
 #' @return A list with the following components:
@@ -76,19 +78,21 @@ fit_spline_gaussian <- function(FX,
         max_itr = 100L,
         history_size = 30L,
         tolerance_grad = 1e-7,
-        tolerance_change = 1e-9
+        tolerance_change = 1e-9,
+        precision = "float32"
     )
     control <- utils::modifyList(defaults, control)
     assert_that(all(names(control) %in% names(defaults)))
 
     # Verify control parameters
     assert_that(
-        all(sapply(control, is.numeric)),
+        all(sapply(control[names(control) != "precision"], is.numeric)),
         control$max_outer >= 1,
         control$max_itr >= 1,
         control$history_size >= 1,
         control$tolerance_grad > 0,
-        control$tolerance_change > 0
+        control$tolerance_change > 0,
+        control$precision %in% c("float32", "float64")
     )
     control$max_outer <- as.integer(control$max_outer)
     control$max_itr <- as.integer(control$max_itr)

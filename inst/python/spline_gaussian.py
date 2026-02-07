@@ -43,16 +43,22 @@ def fit_gaussian_spline(
 	history_size = int(control["history_size"])
 	tolerance_grad = float(control["tolerance_grad"])
 	tolerance_change = float(control["tolerance_change"])
+	dtype = control["fp"]
 	lam = float(lam)
+	
+	if dtype == "float32":
+	    dtype = torch.float32
+	else:
+	    dtype = torch.float64
 
 	# Set up tensors
 	par0 = np.atleast_1d(par0)
 	par0 = np.ascontiguousarray(par0)
-	beta = torch.tensor(par0, dtype = torch.float64, requires_grad = True)
+	beta = torch.tensor(par0, dtype = dtype, requires_grad = True)
 	
-	x = torch.tensor(x, dtype = torch.float64)
-	NX = torch.tensor(NX, dtype = torch.float64)
-	B = torch.tensor(B, dtype = torch.float64)
+	x = torch.tensor(x, dtype = dtype)
+	NX = torch.tensor(NX, dtype = dtype)
+	B = torch.tensor(B, dtype = dtype)
 
 	# Precompute fixed penalty matrix
 	S = pen_mat(B.shape[1])
@@ -112,7 +118,11 @@ def _spline_loss(
 	eta = B @ beta
 	
 	# Negative log likelihood
-	nll = -torch.sum(_log_mvn_density(NX, eta.T.contiguous()))
+	nll = -torch.sum(_log_mvn_density(
+	    x = NX,
+	    V = eta.T.contiguous(),
+	    dtype = dtype
+	))
 	
 	# Penalty term = lambda/2 * trace(beta.T * S * beta)
 	pen = 0.5 * lam * (beta * (S @ beta)).sum()
@@ -124,7 +134,7 @@ def _spline_loss(
 
 ###############################################################################
 
-def pen_mat(K: int) -> torch.Tensor:
+def pen_mat(K: int, dtype: torch.dtype) -> torch.Tensor:
 	"""
 	Compute penalty matrix.
 
@@ -132,6 +142,8 @@ def pen_mat(K: int) -> torch.Tensor:
 	----------
 	K : int
 		Degrees of freedom.
+	dtype : torch.dtype
+	    Floating point precision.
 		
 	Returns
 	-------
@@ -139,7 +151,7 @@ def pen_mat(K: int) -> torch.Tensor:
 		A tensor representing the penalty matrix.
 	"""
 	K = int(K)
-	I = torch.eye(K, dtype = torch.float64)
+	I = torch.eye(K, dtype = dtype)
 	D2 = I[:-2] - 2 * I[1:-1] + I[2:]
 	S = D2.T @ D2
 	return S

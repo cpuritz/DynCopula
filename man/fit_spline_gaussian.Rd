@@ -63,5 +63,7 @@ parameters can be supplied:
   \code{1e-7}.
   \item \code{tolerance_change} Termination tolerance for log-likelihood.
   Default is \code{1e-9}.
+  \item \code{precision}: Floating precision. Either \code{"float32"} or
+  \code{"float64"}. Default is \code{"float32"}.
 }
 }

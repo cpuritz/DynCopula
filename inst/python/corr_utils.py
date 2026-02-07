@@ -6,7 +6,8 @@ from functools import lru_cache
 
 def _log_mvn_density(
     x: torch.Tensor,
-    V: torch.Tensor
+    V: torch.Tensor,
+    dtype: torch.dtype
 ) -> torch.Tensor:
 	"""
 	Compute the log-density of a multivariate Gaussian distribution.
@@ -20,6 +21,8 @@ def _log_mvn_density(
         covariance matrix is constructed for all samples. In the latter case,
         one covariance matrix is constructed for each sample. `npar` must equal
         `choose(d, 2)`.
+    dtype : torch.dtype
+        Floating-point precision.
 
 	Returns
 	-------
@@ -31,7 +34,7 @@ def _log_mvn_density(
 	d = x.shape[-1]
 	
 	# Convert the unconstrained parameter vector to a Cholesky factor
-	L = _vec2chol(V)
+	L = _vec2chol(V, dtype)
 	
 	# Compute m = L^(-1) x
 	m = torch.linalg.solve_triangular(L, x.unsqueeze(-1), upper = False)
@@ -41,7 +44,7 @@ def _log_mvn_density(
 
 	# Compute 0.5*log|R| for R=LL^T
 	diag = L.diagonal(dim1 = -2, dim2 = -1)
-	half_log_det = diag.clamp_min(torch.finfo(torch.float64).eps).log().sum(-1)
+	half_log_det = diag.clamp_min(torch.finfo(dtype).eps).log().sum(-1)
 
 	log2pi = x.new_tensor(2.0 * math.pi).log()
 	return -0.5 * (d * log2pi + M) - half_log_det
@@ -50,7 +53,7 @@ def _log_mvn_density(
 
 def _vec2chol(
     V: torch.Tensor,
-    scale: float = 0.5
+    dtype: torch.dtype
 ) -> torch.Tensor:
     """
     Map a vector of unconstrained values to a valid Cholesky factor.
@@ -59,8 +62,8 @@ def _vec2chol(
     ----------
     V : torch.Tensor
         Either of shape `(npar,)` or `(npar, N)`.
-    scale : float, optional
-		Scaling factor to control steepness of `tanh` transformation.
+    dtype : torch.dtype
+        Floating-point precision.
 
     Returns
     -------
@@ -79,18 +82,18 @@ def _vec2chol(
     r, c, mask = _tril_col_major(d)
 
     # Base identity stacked for batch
-    H = torch.eye(d, dtype = torch.float64).expand(nbatch, d, d).clone()
+    H = torch.eye(d, dtype = dtype).expand(nbatch, d, d).clone()
 
     # Fill strictly lower triangular entries
-    H[:, r, c] = torch.tanh(scale * V.T)
+    H[:, r, c] = torch.tanh(0.5 * V.T)
 
     # Compute cumulative product term
-    X = H[:, :, :-1].pow(2).clamp_max(1 - torch.finfo(torch.float64).eps)
+    X = H[:, :, :-1].pow(2).clamp_max(1 - torch.finfo(dtype).eps)
     logS = torch.log1p(-X) * mask[:, :-1]
     sqrtcprod = torch.exp(0.5 * torch.cumsum(logS, dim = 2))
 
     # Build Cholesky factor
-    L = torch.zeros((nbatch, d, d), dtype = torch.float64)
+    L = torch.zeros((nbatch, d, d), dtype = dtype)
     L[:, :, 0] = H[:, :, 0]
     L[:, :, 1:] = H[:, :, 1:] * sqrtcprod
 
