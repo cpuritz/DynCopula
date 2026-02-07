@@ -228,6 +228,8 @@ fit_spline_gaussian <- function(FX,
     names(cv_df) <- c("lambda_ix", "df_ix", "ll")
     cv_df$lambda_ix <- as.integer(as.character(cv_df$lambda_ix))
     cv_df$df_ix <- as.integer(as.character(cv_df$df_ix))
+
+    # Convert indices for lambda and df to values
     cv_df <- data.frame(
         lambda = lambda[cv_df$lambda_ix],
         df = df[cv_df$df_ix],
