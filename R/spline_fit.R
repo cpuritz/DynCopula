@@ -21,8 +21,7 @@
 #' is a list that supplies control parameters for optimization. The following
 #' parameters can be supplied:
 #' \itemize{
-#'   \item \code{max_outer} Maximum number of outer iterations. Default is
-#'   \code{1}.
+#'   \item \code{max_outer} Number of outer iterations. Default is \code{1}.
 #'   \item \code{max_itr} Maximum number of inner iterations. Default is
 #'   \code{100}.
 #'   \item \code{history_size} History size. Default is \code{30}.
