@@ -115,17 +115,17 @@ fit_spline_gaussian <- function(FX,
     NX <- stats::qnorm(FX)
 
     # Gaussian copula log likelihood
-    loglik <- function(U, eta) {
+    loglik <- function(NU, eta) {
         if (any(is.na(eta) | is.nan(eta))) {
             return(-1e12)
         }
         copula_ll <- mvtnorm::dmvnorm(
-            x = U,
+            x = NU,
             sigma = vec2cor(eta),
             log = TRUE,
             checkSymmetry = FALSE
         )
-        margin_ll <- sum(stats::dnorm(U, log = TRUE))
+        margin_ll <- sum(stats::dnorm(NU, log = TRUE))
         return(copula_ll - margin_ll)
     }
 

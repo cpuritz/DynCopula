@@ -31,8 +31,7 @@ elements:
 \itemize{
   \item \code{rho}: Matrix of estimated correlation coefficients.
   \item \code{eta}: Matrix of estimated calibrations coefficients.
-  \item \code{lambda}: The smoothing parameter selected via CV.
-  \item \code{df}: The degrees of freedom selected CV.
+  \item \code{cv}: Cross-validation results.
 }
 }
 \description{
@@ -43,7 +42,7 @@ likelihood.
 This function can only be run after
 \link[DynCopula]{generate_metacells} has been run.
 
-Cross-validation (CV) is used to select the values of \code{lambda} and
+Cross-validation is used to select the values of \code{lambda} and
 \code{df}.
 
 Optimization is performed using L-BFGS. The \code{control} argument
