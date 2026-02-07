@@ -229,16 +229,15 @@ fit_spline_gaussian <- function(FX,
     names(cv_df) <- c("lambda_ix", "df_ix", "ll")
     cv_df$lambda_ix <- as.integer(as.character(cv_df$lambda_ix))
     cv_df$df_ix <- as.integer(as.character(cv_df$df_ix))
-
-    # Optimal hyperparameters
-    lambda_opt <- cv_df[which.max(cv_df$ll), "lambda_ix"]
-    df_opt <- cv_df[which.max(cv_df$ll), "df_ix"]
-
     cv_df <- data.frame(
         lambda = lambda[cv_df$lambda_ix],
         df = df[cv_df$df_ix],
         ll = cv_df$ll
     )
+
+    # Optimal hyperparameters
+    lambda_opt <- cv_df[which.max(cv_df$ll), "lambda"]
+    df_opt <- cv_df[which.max(cv_df$ll), "df"]
 
     # Estimation using the CV optimal lambda and df
     B <- get_basis(x, df_opt)
