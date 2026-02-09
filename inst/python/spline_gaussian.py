@@ -43,7 +43,7 @@ def fit_gaussian_spline(
 	history_size = int(control["history_size"])
 	tolerance_grad = float(control["tolerance_grad"])
 	tolerance_change = float(control["tolerance_change"])
-	dtype = control["fp"]
+	dtype = control["precision"]
 	lam = float(lam)
 	
 	if dtype == "float32":
