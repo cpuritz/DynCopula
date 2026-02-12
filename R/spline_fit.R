@@ -10,14 +10,14 @@
 #' @param lambda Vector of smoothing parameters. Default is
 #' \code{10^(seq(-5, 5, length.out = 7))}.
 #' @param df Vector of degrees of freedom. Default is \code{c(10, 50, 100)}.
+#' @param model_select Method for model selection. Either \code{"aic"} (Akaike
+#' information criterion) or \code{"cv"} (cross-validation).
 #' @param nfold Number of folds for cross-validation. Default is \code{5}.
+#' Ignored if \code{model_select = "aic"}.
 #' @param cores Number of cores to use. Default is \code{1}.
 #' @param control A \code{list} of control parameters for optimization.
 #'
-#' @details Cross-validation is used to select the values of \code{lambda} and
-#' \code{df}.
-#'
-#' Optimization is performed using L-BFGS. The \code{control} argument
+#' @details Optimization is performed using L-BFGS. The \code{control} argument
 #' is a list that supplies control parameters for optimization. The following
 #' parameters can be supplied:
 #' \itemize{
@@ -31,6 +31,8 @@
 #'   Default is \code{1e-9}.
 #'   \item \code{precision}: Floating precision. Either \code{"float32"} or
 #'   \code{"float64"}. Default is \code{"float32"}.
+#'   \item \code{boundary}: Boundary extension for spline knot boundaries.
+#'   Default is \code{0.05}.
 #' }
 #'
 #' @return A list with the following components:
@@ -42,7 +44,7 @@
 #'   \item \code{rho}: Matrix of estimated pairwise correlation coefficients.
 #'   \item \code{lambda}: The optimal smoothing parameter.
 #'   \item \code{df}: The optimal degrees of freedom.
-#'   \item \code{cv}: Cross-validation results.
+#'   \item \code{model_select}: Model selection results.
 #' }
 #'
 #' @export
@@ -50,6 +52,7 @@ fit_spline_gaussian <- function(FX,
                                 x,
                                 lambda = 10^(seq(-5, 5, length.out = 7)),
                                 df = c(10, 50, 100),
+                                model_select = c("aic", "cv"),
                                 nfold = 5,
                                 cores = 1,
                                 control = list()) {
@@ -60,11 +63,17 @@ fit_spline_gaussian <- function(FX,
         dim(FX)[1] == length(x),
         is.vector(lambda, mode = "numeric") && all(lambda > 0),
         is.vector(df, mode = "numeric") && all(df >= 1),
-        is.numeric(nfold) && nfold >= 2,
+        is.character(model_select),
         is.numeric(cores) && cores >= 1,
         is.list(control)
     )
-    nfold <- as.integer(nfold)
+
+    # Model selection method
+    model_select <- match.arg(model_select)
+    if (model_select == "cv") {
+        assert_that(is.numeric(nfold) && nfold >= 2)
+        nfold <- as.integer(nfold)
+    }
 
     # Set up futures plan
     cl <- parallel::makeCluster(as.integer(cores))
@@ -79,7 +88,8 @@ fit_spline_gaussian <- function(FX,
         history_size = 30L,
         tolerance_grad = 1e-7,
         tolerance_change = 1e-9,
-        precision = "float32"
+        precision = "float32",
+        boundary = 0.05
     )
     control <- utils::modifyList(defaults, control)
     assert_that(all(names(control) %in% names(defaults)))
@@ -92,7 +102,8 @@ fit_spline_gaussian <- function(FX,
         control$history_size >= 1,
         control$tolerance_grad > 0,
         control$tolerance_change > 0,
-        control$precision %in% c("float32", "float64")
+        control$precision %in% c("float32", "float64"),
+        control$boundary >= 0
     )
     control$max_outer <- as.integer(control$max_outer)
     control$max_itr <- as.integer(control$max_itr)
@@ -132,13 +143,9 @@ fit_spline_gaussian <- function(FX,
         return(copula_ll - margin_ll)
     }
 
-    # K-fold cross validation with equal-sized contiguous blocks
-    fold_ids <- cut(seq_along(x), breaks = nfold, labels = FALSE)
-
-    # Spline basis matrix
+    # Spline basis matrix with knot boundary extension
+    knot_eps <- control$boundary
     get_basis <- function(x, df) {
-        # Knot boundary extension
-        knot_eps <- 0.05
         splines::ns(
             x = x,
             df = df,
@@ -147,21 +154,13 @@ fit_spline_gaussian <- function(FX,
         )
     }
 
-    # All combinations of lambda and df
-    combs <- expand.grid(
-        lambda_ix = seq_along(lambda),
-        df_ix = seq_along(df),
-        fold = seq_len(nfold)
-    )
-    ncomb <- dim(combs)[1]
-
     # Since Python functions are not serializable, we can't load the
     # optimization function in the global environment. Instead, the function
     # needs to be loaded on each worker. This environment stores the
     # function once it has been loaded to avoid having to do it multiple
     # times on the same worker.
     .fit_env <- new.env(parent = emptyenv())
-    fit_fun <- function(par0, x, NX, B, lam, control) {
+    fit_fun <- function(par0, x, NX, B, lam, control, compute_edf) {
         # Load the module if it hasn't been loaded yet
         if (!exists("fit_fun", envir = .fit_env, inherits = FALSE)) {
             .fit_env$fit_fun <- reticulate::import_from_path(
@@ -176,85 +175,166 @@ fit_spline_gaussian <- function(FX,
             NX = NX,
             B = B,
             lam = lam,
-            control = control
+            control = control,
+            compute_edf = compute_edf
         )
     }
 
-    progressr::with_progress({
-        pbar <- progressr::progressor(along = seq_len(ncomb))
-        cv <- future.apply::future_lapply(
-            X = seq_len(ncomb),
-            FUN = function(i) {
-                # Train and test folds
-                test_ix <- which(fold_ids == combs$fold[i])
-                train_ix <- which(fold_ids != combs$fold[i])
-
-                # Spline basis matrices
-                B <- get_basis(x, df[combs$df_ix[i]])
-                B_train <- B[train_ix, , drop = FALSE]
-                B_test <- B[test_ix, , drop = FALSE]
-
-                # Initial coefficient estimates
-                par0 <- matrix(0, nrow = dim(B)[2], ncol = npar)
-
-                # Fit using training data
-                beta_est <- fit_fun(
-                    par0 = par0,
-                    x = x[train_ix],
-                    NX = NX[train_ix, , drop = FALSE],
-                    B = B_train,
-                    lam = lambda[combs$lambda_ix[i]],
-                    control = control
-                )
-
-                # Predictions for test data
-                H_test <- B_test %*% beta_est
-
-                # Cross-validated likelihood criterion
-                ll <- sum(sapply(seq_along(test_ix), function(j) {
-                    loglik(NX[test_ix[j], ], H_test[j, ])
-                }))
-                pbar()
-                return(ll)
-            },
-            future.seed = TRUE,
-            future.globals = TRUE
+    if (model_select == "aic") {
+        # All combinations of lambda and df
+        combs <- expand.grid(
+            lambda_ix = seq_along(lambda),
+            df_ix = seq_along(df)
         )
+    } else {
+        # K-fold cross validation with equal-sized contiguous blocks
+        fold_ids <- cut(seq_along(x), breaks = nfold, labels = FALSE)
+        # All combinations of lambda df, and folds
+        combs <- expand.grid(
+            lambda_ix = seq_along(lambda),
+            df_ix = seq_along(df),
+            fold = seq_len(nfold)
+        )
+    }
+    ncomb <- dim(combs)[1]
+
+    progressr::with_progress({
+        pbar <- progressr::progressor(along = seq_len(ncomb + 1L))
+
+        if (model_select == "aic") {
+            # Model selection via AIC
+            res <- future.apply::future_lapply(
+                X = seq_len(ncomb),
+                FUN = function(i) {
+                    # Spline basis matrix
+                    B <- get_basis(x, df[combs$df_ix[i]])
+
+                    # Initial coefficient estimates
+                    par0 <- matrix(0, nrow = dim(B)[2], ncol = npar)
+
+                    # Fit model
+                    model_fit <- fit_fun(
+                        par0 = par0,
+                        x = x,
+                        NX = NX,
+                        B = B,
+                        lam = lambda[combs$lambda_ix[i]],
+                        control = control,
+                        compute_edf = TRUE
+                    )
+                    beta_est <- model_fit$beta
+                    edf <- model_fit$edf
+
+                    # Predicted calibration function values
+                    H <- B %*% beta_est
+
+                    # Model likelihood
+                    ll <- sum(sapply(seq_along(x), function(j) {
+                        loglik(NX[j, ], H[j, ])
+                    }))
+                    pbar()
+                    return(list(ll = ll, edf = edf))
+                },
+                future.seed = TRUE,
+                future.globals = TRUE
+            )
+
+            edf <- sapply(res, '[[', "edf")
+            ll <- sapply(res, '[[', "ll")
+
+            # Convert indices for lambda and df to values
+            model_df <- data.frame(
+                lambda = lambda[combs$lambda_ix],
+                df = df[combs$df_ix],
+                edf = edf,
+                ll = ll,
+                aic = -2 * ll + 2 * edf
+            )
+
+            # Index for optimal hyperparameters
+            ix_opt <- which.min(model_df$aic)
+        } else {
+            # Model selection via cross-validation
+            cv <- future.apply::future_lapply(
+                X = seq_len(ncomb),
+                FUN = function(i) {
+                    # Train and test folds
+                    test_ix <- which(fold_ids == combs$fold[i])
+                    train_ix <- which(fold_ids != combs$fold[i])
+
+                    # Spline basis matrices
+                    B <- get_basis(x, df[combs$df_ix[i]])
+                    B_train <- B[train_ix, , drop = FALSE]
+                    B_test <- B[test_ix, , drop = FALSE]
+
+                    # Initial coefficient estimates
+                    par0 <- matrix(0, nrow = dim(B)[2], ncol = npar)
+
+                    # Fit using training data
+                    beta_est <- fit_fun(
+                        par0 = par0,
+                        x = x[train_ix],
+                        NX = NX[train_ix, , drop = FALSE],
+                        B = B_train,
+                        lam = lambda[combs$lambda_ix[i]],
+                        control = control,
+                        compute_edf = FALSE
+                    )$beta
+
+                    # Predictions for test data
+                    H_test <- B_test %*% beta_est
+
+                    # Cross-validated likelihood criterion
+                    ll <- sum(sapply(seq_along(test_ix), function(j) {
+                        loglik(NX[test_ix[j], ], H_test[j, ])
+                    }))
+                    pbar()
+                    return(ll)
+                },
+                future.seed = TRUE,
+                future.globals = TRUE
+            )
+
+            # Sum likelihoods across folds
+            ll_sum <- tapply(
+                X = unlist(cv),
+                INDEX = list(combs$lambda_ix, combs$df_ix),
+                FUN = sum
+            )
+            cv_df <- as.data.frame(as.table(ll_sum))
+            names(cv_df) <- c("lambda_ix", "df_ix", "ll")
+            cv_df$lambda_ix <- as.integer(as.character(cv_df$lambda_ix))
+            cv_df$df_ix <- as.integer(as.character(cv_df$df_ix))
+
+            # Convert indices for lambda and df to values
+            model_df <- data.frame(
+                lambda = lambda[cv_df$lambda_ix],
+                df = df[cv_df$df_ix],
+                ll = cv_df$ll
+            )
+
+            # Index for optimal hyperparameters
+            ix_opt <- which.max(model_df$ll)
+        }
+
+        # Optimal hyperparameters
+        lambda_opt <- model_df$lambda[ix_opt]
+        df_opt <- model_df$df[ix_opt]
+
+        # Estimation using the selected hyperparameters
+        B <- get_basis(x, df_opt)
+        par0 <- matrix(0, nrow = df_opt, ncol = npar)
+        beta_opt <- fit_fun(
+            par0 = par0,
+            x = x,
+            NX = NX,
+            B = B,
+            lam = lambda_opt,
+            control = control,
+            compute_edf = FALSE
+        )$beta
+        pbar()
     })
-
-    # Sum likelihoods across folds
-    ll_sum <- tapply(
-        X = unlist(cv),
-        INDEX = list(combs$lambda_ix, combs$df_ix),
-        FUN = sum
-    )
-    cv_df <- as.data.frame(as.table(ll_sum))
-    names(cv_df) <- c("lambda_ix", "df_ix", "ll")
-    cv_df$lambda_ix <- as.integer(as.character(cv_df$lambda_ix))
-    cv_df$df_ix <- as.integer(as.character(cv_df$df_ix))
-
-    # Convert indices for lambda and df to values
-    cv_df <- data.frame(
-        lambda = lambda[cv_df$lambda_ix],
-        df = df[cv_df$df_ix],
-        ll = cv_df$ll
-    )
-
-    # Optimal hyperparameters
-    lambda_opt <- cv_df[which.max(cv_df$ll), "lambda"]
-    df_opt <- cv_df[which.max(cv_df$ll), "df"]
-
-    # Estimation using the CV optimal lambda and df
-    B <- get_basis(x, df_opt)
-    par0 <- matrix(0, nrow = df_opt, ncol = npar)
-    beta_opt <- fit_fun(
-        par0 = par0,
-        x = x,
-        NX = NX,
-        B = B,
-        lam = lambda_opt,
-        control = control
-    )
 
     # Matrix of estimated calibration coefficients
     Hhat <- B %*% beta_opt
@@ -285,7 +365,7 @@ fit_spline_gaussian <- function(FX,
         rho = Rhat,
         lambda = lambda_opt,
         df = df_opt,
-        cv = cv_df
+        model_select = model_df
     ))
 }
 

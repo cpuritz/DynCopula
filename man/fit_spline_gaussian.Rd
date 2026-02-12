@@ -9,6 +9,7 @@ fit_spline_gaussian(
   x,
   lambda = 10^(seq(-5, 5, length.out = 7)),
   df = c(10, 50, 100),
+  model_select = c("aic", "cv"),
   nfold = 5,
   cores = 1,
   control = list()
@@ -25,7 +26,11 @@ duplicates.}
 
 \item{df}{Vector of degrees of freedom. Default is \code{c(10, 50, 100)}.}
 
-\item{nfold}{Number of folds for cross-validation. Default is \code{5}.}
+\item{model_select}{Method for model selection. Either \code{"aic"} (Akaike
+information criterion) or \code{"cv"} (cross-validation).}
+
+\item{nfold}{Number of folds for cross-validation. Default is \code{5}.
+Ignored if \code{model_select = "aic"}.}
 
 \item{cores}{Number of cores to use. Default is \code{1}.}
 
@@ -41,16 +46,13 @@ A list with the following components:
   \item \code{rho}: Matrix of estimated pairwise correlation coefficients.
   \item \code{lambda}: The optimal smoothing parameter.
   \item \code{df}: The optimal degrees of freedom.
-  \item \code{cv}: Cross-validation results.
+  \item \code{model_select}: Model selection results.
 }
 }
 \description{
 Fit a dynamic Gaussian copula model using penalized splines.
 }
 \details{
-Cross-validation is used to select the values of \code{lambda} and
-\code{df}.
-
 Optimization is performed using L-BFGS. The \code{control} argument
 is a list that supplies control parameters for optimization. The following
 parameters can be supplied:
@@ -65,5 +67,7 @@ parameters can be supplied:
   Default is \code{1e-9}.
   \item \code{precision}: Floating precision. Either \code{"float32"} or
   \code{"float64"}. Default is \code{"float32"}.
+  \item \code{boundary}: Boundary extension for spline knot boundaries.
+  Default is \code{0.05}.
 }
 }

@@ -11,8 +11,9 @@ def fit_gaussian_spline(
 	NX: np.ndarray,
 	B: np.ndarray,
     lam: float,
-    control: Mapping[str, Union[float, int]]
-) -> float:
+    control: Mapping[str, Union[float, int]],
+    compute_edf: bool
+) -> Mapping[str, Union[np.ndarray, float]]:
 	"""
 	Fit a dynamic Gaussian copula model using smooth splines.
 	
@@ -25,17 +26,24 @@ def fit_gaussian_spline(
 	NX : np.ndarray
 		Normal-transformed pseudo-observations. Shape `(n, d)`. Rows
 		correspond to `x`.
-	B: np.ndarray
+	B : np.ndarray
         Basis matrix. Shape `(n, K)`.
-	lam: float
-	    Smoothing parameter vector.
-	control : Mapping[str, float | int]
+	lam : float
+	    Smoothing parameter.
+	control :  Mapping[str, Union[float, int]]
 		Optimization control parameters.
+	compute_edf : bool
+	    Whether to compute degrees of freedom.
 
 	Returns
 	-------
-	np.ndarray
-		A 1D array containing the estimates of the spline coefficients.
+	A dictionary with the following elements:
+	    
+	beta : np.ndarray
+		Estimated spline coefficients. Shape `(K, p)`.
+	edf : float
+	    Effective degrees of freedom. If `compute_edf` is `False`, then the
+	    value returned is `np.nan`.
 	"""
 
 	max_outer = int(control["max_outer"])
@@ -45,6 +53,7 @@ def fit_gaussian_spline(
 	tolerance_change = float(control["tolerance_change"])
 	dtype = control["precision"]
 	lam = float(lam)
+	compute_edf = bool(compute_edf)
 	
 	if dtype == "float32":
 	    dtype = torch.float32
@@ -87,8 +96,17 @@ def fit_gaussian_spline(
     
 	for _ in range(max_outer):
 		loss = optimizer.step(closure)
-
-	return beta.detach().numpy()
+	beta_hat = beta.detach()
+	
+	if compute_edf:
+	    edf = edf_pen(beta_hat, NX, B, lam, dtype)
+	else:
+	    edf = np.nan
+	
+	return {
+	    "beta": beta_hat.numpy(),
+	    "edf": edf
+	}
     
 ###############################################################################
     
@@ -167,3 +185,59 @@ def pen_mat(K: int, dtype: torch.dtype) -> torch.Tensor:
 	return S
 
 ###############################################################################
+
+def edf_pen(
+    beta_hat: torch.tensor,
+    NX: torch.tensor,
+    B: torch.tensor,
+    lam: float,
+    dtype: torch.dtype
+) -> float:
+    """
+	Compute effective degrees of freedom (EDF).
+
+	Parameters
+	----------
+	beta_hat : torch.tensor
+		Estimated model coefficients.
+	NX : torch.tensor
+	    Normal-transformed pseudo-observations.
+	B : torch.tensor
+	    Spline basis matrix.
+	lam : float
+	    Smoothing parameter.
+	dtype : torch.dtype
+	    Floating point precision.
+		
+	Returns
+	-------
+	float
+		A float representing the EDF.
+	"""
+
+    K, p = beta_hat.shape
+
+    # Penalty matrix S (K x K) and P = I_p ⊗ S  (Kp x Kp)
+    S = pen_mat(K = K, dtype = dtype)
+    P = torch.kron(torch.eye(p, dtype = dtype), S) # (Kp, Kp)
+
+    # Flatten beta so autograd can take Hessians in R^{Kp}
+    beta0 = beta_hat.reshape(-1).clone().detach().requires_grad_(True)
+
+    def ll_from_vec(beta_vec: torch.Tensor) -> torch.Tensor:
+        beta = beta_vec.view(K, p)
+        eta = B @ beta
+        ll = torch.sum(_log_mvn_density(
+            x = NX,
+            V = eta.T.contiguous(),
+            dtype = dtype
+        ))
+        return ll
+
+    # Observed information matrix
+    Iobs = -torch.autograd.functional.hessian(ll_from_vec, beta0)  # (Kp, Kp)
+
+    # EDF = tr((Iobs + lam * P)^{-1} Iobs)
+    edf = torch.trace(torch.linalg.solve(Iobs + lam * P, Iobs))
+    
+    return edf.item()
