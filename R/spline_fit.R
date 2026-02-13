@@ -217,6 +217,7 @@ fit_spline_gaussian <- function(FX,
                     B <- get_basis(x, df[combs$df_ix[i]])
 
                     # Initial coefficient estimates
+                    npar <- choose(dim(NX)[2], 2)
                     par0 <- matrix(0, nrow = dim(B)[2], ncol = npar)
 
                     # Fit model
@@ -244,9 +245,8 @@ fit_spline_gaussian <- function(FX,
                 },
                 future.seed = TRUE,
                 future.globals = list(
-                    x = x, NX = NX, npar = npar, par0 = par0, lambda = lambda,
-                    df = df, combs = combs, pbar = pbar, get_basis = get_basis,
-                    loglik = loglik
+                    x = x, NX = NX, lambda = lambda, df = df, combs = combs,
+                    pbar = pbar, get_basis = get_basis, loglik = loglik
                 ),
                 future.packages = c("splines", "mvtnorm", "copula",
                                     "reticulate", "DynCopula")
