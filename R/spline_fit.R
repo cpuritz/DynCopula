@@ -208,134 +208,136 @@ fit_spline_gaussian <- function(FX,
     progressr::with_progress({
         pbar <- progressr::progressor(along = seq_len(ncomb + 1L))
 
-        if (model_select == "aic") {
-            # Model selection via AIC
-            res <- future.apply::future_lapply(
-                X = seq_len(ncomb),
-                FUN = function(i) {
-                    # Spline basis matrix
-                    B <- get_basis(x, df[combs$df_ix[i]])
-
-                    # Initial coefficient estimates
-                    npar <- choose(dim(NX)[2], 2)
-                    par0 <- matrix(0, nrow = dim(B)[2], ncol = npar)
-
-                    # Fit model
-                    model_fit <- fit_fun(
-                        par0 = par0,
-                        x = x,
-                        NX = NX,
-                        B = B,
-                        lam = lambda[combs$lambda_ix[i]],
-                        control = control,
-                        compute_edf = TRUE
-                    )
-                    beta_est <- model_fit$beta
-                    edf <- model_fit$edf
-
-                    # Predicted calibration function values
-                    H <- B %*% beta_est
-
-                    # Model likelihood
-                    ll <- sum(sapply(seq_along(x), function(j) {
-                        loglik(NX[j, ], H[j, ])
-                    }))
-                    pbar()
-                    return(list(ll = ll, edf = edf))
-                },
-                future.seed = TRUE,
-                future.globals = list(
-                    x = x, NX = NX, lambda = lambda, df = df, combs = combs,
-                    pbar = pbar, get_basis = get_basis, loglik = loglik
-                ),
-                future.packages = c("splines", "mvtnorm", "copula",
-                                    "reticulate", "DynCopula")
-            )
-
-            edf <- sapply(res, '[[', "edf")
-            ll <- sapply(res, '[[', "ll")
-
-            # Convert indices for lambda and df to values
-            model_df <- data.frame(
-                lambda = lambda[combs$lambda_ix],
-                df = df[combs$df_ix],
-                edf = edf,
-                ll = ll,
-                aic = -2 * ll + 2 * edf
-            )
-
-            # Index for optimal hyperparameters
-            ix_opt <- which.min(model_df$aic)
-        } else {
-            # Model selection via cross-validation
-            cv <- future.apply::future_lapply(
-                X = seq_len(ncomb),
-                FUN = function(i) {
-                    # Train and test folds
-                    test_ix <- which(fold_ids == combs$fold[i])
-                    train_ix <- which(fold_ids != combs$fold[i])
-
-                    # Spline basis matrices
-                    B <- get_basis(x, df[combs$df_ix[i]])
-                    B_train <- B[train_ix, , drop = FALSE]
-                    B_test <- B[test_ix, , drop = FALSE]
-
-                    # Initial coefficient estimates
-                    par0 <- matrix(0, nrow = dim(B)[2], ncol = npar)
-
-                    # Fit using training data
-                    beta_est <- fit_fun(
-                        par0 = par0,
-                        x = x[train_ix],
-                        NX = NX[train_ix, , drop = FALSE],
-                        B = B_train,
-                        lam = lambda[combs$lambda_ix[i]],
-                        control = control,
-                        compute_edf = FALSE
-                    )$beta
-
-                    # Predictions for test data
-                    H_test <- B_test %*% beta_est
-
-                    # Cross-validated likelihood criterion
-                    ll <- sum(sapply(seq_along(test_ix), function(j) {
-                        loglik(NX[test_ix[j], ], H_test[j, ])
-                    }))
-                    pbar()
-                    return(ll)
-                },
-                future.seed = TRUE,
-                future.globals = TRUE
-            )
-
-            # Sum likelihoods across folds
-            ll_sum <- tapply(
-                X = unlist(cv),
-                INDEX = list(combs$lambda_ix, combs$df_ix),
-                FUN = sum
-            )
-            cv_df <- as.data.frame(as.table(ll_sum))
-            names(cv_df) <- c("lambda_ix", "df_ix", "ll")
-            # Convert factor IDs to indices
-            cv_df$lambda_ix <- as.integer(as.character(cv_df$lambda_ix))
-            cv_df$df_ix <- as.integer(as.character(cv_df$df_ix))
-
-            # Convert indices for lambda and df to values
-            model_df <- data.frame(
-                lambda = lambda[cv_df$lambda_ix],
-                df = df[cv_df$df_ix],
-                ll = cv_df$ll
-            )
-
-            # Index for optimal hyperparameters
-            ix_opt <- which.max(model_df$ll)
-        }
-
-        # Optimal hyperparameters
-        lambda_opt <- model_df$lambda[ix_opt]
-        df_opt <- model_df$df[ix_opt]
+        # if (model_select == "aic") {
+        #     # Model selection via AIC
+        #     res <- future.apply::future_lapply(
+        #         X = seq_len(ncomb),
+        #         FUN = function(i) {
+        #             # Spline basis matrix
+        #             B <- get_basis(x, df[combs$df_ix[i]])
+        #
+        #             # Initial coefficient estimates
+        #             npar <- choose(dim(NX)[2], 2)
+        #             par0 <- matrix(0, nrow = dim(B)[2], ncol = npar)
+        #
+        #             # Fit model
+        #             model_fit <- fit_fun(
+        #                 par0 = par0,
+        #                 x = x,
+        #                 NX = NX,
+        #                 B = B,
+        #                 lam = lambda[combs$lambda_ix[i]],
+        #                 control = control,
+        #                 compute_edf = TRUE
+        #             )
+        #             beta_est <- model_fit$beta
+        #             edf <- model_fit$edf
+        #
+        #             # Predicted calibration function values
+        #             H <- B %*% beta_est
+        #
+        #             # Model likelihood
+        #             ll <- sum(sapply(seq_along(x), function(j) {
+        #                 loglik(NX[j, ], H[j, ])
+        #             }))
+        #             pbar()
+        #             return(list(ll = ll, edf = edf))
+        #         },
+        #         future.seed = TRUE,
+        #         future.globals = list(
+        #             x = x, NX = NX, lambda = lambda, df = df, combs = combs,
+        #             pbar = pbar, get_basis = get_basis, loglik = loglik
+        #         ),
+        #         future.packages = c("splines", "mvtnorm", "copula",
+        #                             "reticulate", "DynCopula")
+        #     )
+        #
+        #     edf <- sapply(res, '[[', "edf")
+        #     ll <- sapply(res, '[[', "ll")
+        #
+        #     # Convert indices for lambda and df to values
+        #     model_df <- data.frame(
+        #         lambda = lambda[combs$lambda_ix],
+        #         df = df[combs$df_ix],
+        #         edf = edf,
+        #         ll = ll,
+        #         aic = -2 * ll + 2 * edf
+        #     )
+        #
+        #     # Index for optimal hyperparameters
+        #     ix_opt <- which.min(model_df$aic)
+        # } else {
+        #     # Model selection via cross-validation
+        #     cv <- future.apply::future_lapply(
+        #         X = seq_len(ncomb),
+        #         FUN = function(i) {
+        #             # Train and test folds
+        #             test_ix <- which(fold_ids == combs$fold[i])
+        #             train_ix <- which(fold_ids != combs$fold[i])
+        #
+        #             # Spline basis matrices
+        #             B <- get_basis(x, df[combs$df_ix[i]])
+        #             B_train <- B[train_ix, , drop = FALSE]
+        #             B_test <- B[test_ix, , drop = FALSE]
+        #
+        #             # Initial coefficient estimates
+        #             par0 <- matrix(0, nrow = dim(B)[2], ncol = npar)
+        #
+        #             # Fit using training data
+        #             beta_est <- fit_fun(
+        #                 par0 = par0,
+        #                 x = x[train_ix],
+        #                 NX = NX[train_ix, , drop = FALSE],
+        #                 B = B_train,
+        #                 lam = lambda[combs$lambda_ix[i]],
+        #                 control = control,
+        #                 compute_edf = FALSE
+        #             )$beta
+        #
+        #             # Predictions for test data
+        #             H_test <- B_test %*% beta_est
+        #
+        #             # Cross-validated likelihood criterion
+        #             ll <- sum(sapply(seq_along(test_ix), function(j) {
+        #                 loglik(NX[test_ix[j], ], H_test[j, ])
+        #             }))
+        #             pbar()
+        #             return(ll)
+        #         },
+        #         future.seed = TRUE,
+        #         future.globals = TRUE
+        #     )
+        #
+        #     # Sum likelihoods across folds
+        #     ll_sum <- tapply(
+        #         X = unlist(cv),
+        #         INDEX = list(combs$lambda_ix, combs$df_ix),
+        #         FUN = sum
+        #     )
+        #     cv_df <- as.data.frame(as.table(ll_sum))
+        #     names(cv_df) <- c("lambda_ix", "df_ix", "ll")
+        #     # Convert factor IDs to indices
+        #     cv_df$lambda_ix <- as.integer(as.character(cv_df$lambda_ix))
+        #     cv_df$df_ix <- as.integer(as.character(cv_df$df_ix))
+        #
+        #     # Convert indices for lambda and df to values
+        #     model_df <- data.frame(
+        #         lambda = lambda[cv_df$lambda_ix],
+        #         df = df[cv_df$df_ix],
+        #         ll = cv_df$ll
+        #     )
+        #
+        #     # Index for optimal hyperparameters
+        #     ix_opt <- which.max(model_df$ll)
+        # }
+        #
+        # # Optimal hyperparameters
+        # lambda_opt <- model_df$lambda[ix_opt]
+        # df_opt <- model_df$df[ix_opt]
 
         # Estimation using the selected hyperparameters
+        df_opt <- df[1]
+        lambda_opt <- lambda[1]
         B <- get_basis(x, df_opt)
         par0 <- matrix(0, nrow = df_opt, ncol = npar)
         beta_opt <- fit_fun(
