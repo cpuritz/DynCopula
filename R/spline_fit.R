@@ -381,7 +381,7 @@ fit_spline_gaussian <- function(FX,
         rho = Rhat,
         lambda = lambda_opt,
         df = df_opt,
-        model_select = model_df
+        model_select = NULL
     ))
 }
 
