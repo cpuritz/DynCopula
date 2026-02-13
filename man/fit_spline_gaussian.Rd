@@ -21,16 +21,17 @@ fit_spline_gaussian(
 \item{x}{Vector of covariate values corresponding to \code{FX}. Must have no
 duplicates.}
 
-\item{lambda}{Vector of smoothing parameters. Default is
+\item{lambda}{Vector of smoothing parameters to test. Default is
 \code{10^(seq(-5, 5, length.out = 7))}.}
 
-\item{df}{Vector of degrees of freedom. Default is \code{c(10, 50, 100)}.}
+\item{df}{Vector of degrees of freedom for the spline basis matrix to test.
+Default is \code{c(10, 50, 100)}.}
 
 \item{model_select}{Method for model selection. Either \code{"aic"} (Akaike
 information criterion) or \code{"cv"} (cross-validation).}
 
 \item{nfold}{Number of folds for cross-validation. Default is \code{5}.
-Ignored if \code{model_select = "aic"}.}
+Only used if \code{model_select = "cv"}.}
 
 \item{cores}{Number of cores to use. Default is \code{1}.}
 
@@ -70,4 +71,9 @@ parameters can be supplied:
   \item \code{boundary}: Boundary extension for spline knot boundaries.
   Default is \code{0.05}.
 }
+
+The model hyperparameters are selected from the values specified by
+\code{lambda} and \code{df}. The model selection method is specified by
+\code{model_select}. Cross-validation will take approximately \code{nfold}
+times longer than AIC, but may be more accurate.
 }

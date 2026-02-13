@@ -7,13 +7,14 @@
 #' @param FX Matrix of pseudo-observations at covariate values.
 #' @param x Vector of covariate values corresponding to \code{FX}. Must have no
 #' duplicates.
-#' @param lambda Vector of smoothing parameters. Default is
+#' @param lambda Vector of smoothing parameters to test. Default is
 #' \code{10^(seq(-5, 5, length.out = 7))}.
-#' @param df Vector of degrees of freedom. Default is \code{c(10, 50, 100)}.
+#' @param df Vector of degrees of freedom for the spline basis matrix to test.
+#' Default is \code{c(10, 50, 100)}.
 #' @param model_select Method for model selection. Either \code{"aic"} (Akaike
 #' information criterion) or \code{"cv"} (cross-validation).
 #' @param nfold Number of folds for cross-validation. Default is \code{5}.
-#' Ignored if \code{model_select = "aic"}.
+#' Only used if \code{model_select = "cv"}.
 #' @param cores Number of cores to use. Default is \code{1}.
 #' @param control A \code{list} of control parameters for optimization.
 #'
@@ -34,6 +35,11 @@
 #'   \item \code{boundary}: Boundary extension for spline knot boundaries.
 #'   Default is \code{0.05}.
 #' }
+#'
+#' The model hyperparameters are selected from the values specified by
+#' \code{lambda} and \code{df}. The model selection method is specified by
+#' \code{model_select}. Cross-validation will take approximately \code{nfold}
+#' times longer than AIC, but may be more accurate.
 #'
 #' @return A list with the following components:
 #' \itemize{
@@ -303,6 +309,7 @@ fit_spline_gaussian <- function(FX,
             )
             cv_df <- as.data.frame(as.table(ll_sum))
             names(cv_df) <- c("lambda_ix", "df_ix", "ll")
+            # Convert factor IDs to indices
             cv_df$lambda_ix <- as.integer(as.character(cv_df$lambda_ix))
             cv_df$df_ix <- as.integer(as.character(cv_df$df_ix))
 
