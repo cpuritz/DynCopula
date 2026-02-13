@@ -166,12 +166,13 @@ fit_spline_gaussian <- function(FX,
     # function once it has been loaded to avoid having to do it multiple
     # times on the same worker.
     .fit_env <- new.env(parent = emptyenv())
+    py_path <- system.file("python", package = "DynCopula")
     fit_fun <- function(par0, x, NX, B, lam, control, compute_edf) {
         # Load the module if it hasn't been loaded yet
         if (!exists("fit_fun", envir = .fit_env, inherits = FALSE)) {
             .fit_env$fit_fun <- reticulate::import_from_path(
                 module = "spline_gaussian",
-                path = system.file("python", package = "DynCopula"),
+                path = py_path,
                 delay_load = FALSE
             )$fit_gaussian_spline
         }
@@ -242,7 +243,13 @@ fit_spline_gaussian <- function(FX,
                     return(list(ll = ll, edf = edf))
                 },
                 future.seed = TRUE,
-                future.globals = TRUE
+                future.globals = list(
+                    x = x, NX = NX, npar = npar, par0 = par0, lambda = lambda,
+                    df = df, combs = combs, pbar = pbar, get_basis = get_basis,
+                    loglik = loglik
+                ),
+                future.packages = c("splines", "mvtnorm", "copula",
+                                    "reticulate", "DynCopula")
             )
 
             edf <- sapply(res, '[[', "edf")
