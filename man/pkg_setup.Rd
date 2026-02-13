@@ -2,22 +2,21 @@
 % Please edit documentation in R/utils.R
 \name{pkg_setup}
 \alias{pkg_setup}
-\title{Build Python virtual environment}
+\title{Setup the package}
 \usage{
-pkg_setup(python = reticulate::virtualenv_starter(NULL))
+pkg_setup(python_path)
 }
 \arguments{
-\item{python}{The path to a Python interpreter.}
+\item{python_path}{The path to a Python interpreter.}
 }
 \value{
 Nothing, called for side effects.
 }
 \description{
-Build a Python virtual environment for the package to use. Only
-needs to be called once after package installation.
+Setup the package by checking that necessary Python modules are
+installed, and then storing the path to the Python interpreter.
 }
 \details{
-The virtual environment is located at
-\code{rappdirs::user_cache_dir("DynCopula")}. A JSON file is also written to
-\code{rappdirs::user_config_dir("DynCopula")}.
+The NumPy and PyTorch libraries are required. This function writes
+a JSON file to \code{rappdirs::user_config_dir("DynCopula")}.
 }

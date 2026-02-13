@@ -1,12 +1,13 @@
 ###############################################################################
 
 .onLoad <- function(libname, pkgname) {
-    # Load the package Python environment
+    # Select the correct Python interpreter
     config_path <- file.path(rappdirs::user_config_dir(pkgname), "config.json")
     if (file.exists(config_path)) {
         config <- jsonlite::read_json(config_path)
-        if (!is.null(config$envname) && file.exists(config$envname)) {
-            reticulate::use_virtualenv(config$envname, required = TRUE)
+        py_path <- config$python_path
+        if (!is.null(py_path) && file.exists(py_path)) {
+            reticulate::use_python(py_path, required = TRUE)
         }
     }
 }
@@ -19,15 +20,16 @@
         return()
     }
 
-    # Print message if the package Python environment has not been configured
+    # Print message if a Python interpreter has not been specified yet
     config_path <- file.path(rappdirs::user_config_dir(pkgname), "config.json")
-    msg <- paste0("Python environment not yet configured. ", "Run '", pkgname,
-                  "::pkg_setup()' to initialize.")
+    msg <- paste0("Python interpreter not yet specified. Run '", pkgname,
+                  "::pkg_setup()'.")
     if (!file.exists(config_path)) {
         packageStartupMessage(msg)
     } else {
         config <- jsonlite::read_json(config_path)
-        if ((is.null(config$envname) || !file.exists(config$envname))) {
+        # Should never get here, but check to be safe
+        if ((is.null(config$path) || !file.exists(config$path))) {
             packageStartupMessage(msg)
         }
     }
