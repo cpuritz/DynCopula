@@ -220,26 +220,29 @@ fit_spline_gaussian <- function(FX,
                     npar <- choose(dim(NX)[2], 2)
                     par0 <- matrix(0, nrow = dim(B)[2], ncol = npar)
 
-                    # Fit model
-                    model_fit <- fit_fun(
-                        par0 = par0,
-                        x = x,
-                        NX = NX,
-                        B = B,
-                        lam = lambda[combs$lambda_ix[i]],
-                        control = control,
-                        compute_edf = TRUE
-                    )
-                    beta_est <- model_fit$beta
-                    edf <- model_fit$edf
+                    print(reticulate::py_config())
 
-                    # Predicted calibration function values
-                    H <- B %*% beta_est
-
-                    # Model likelihood
-                    ll <- sum(sapply(seq_along(x), function(j) {
-                        loglik(NX[j, ], H[j, ])
-                    }))
+                    # # Fit model
+                    # model_fit <- fit_fun(
+                    #     par0 = par0,
+                    #     x = x,
+                    #     NX = NX,
+                    #     B = B,
+                    #     lam = lambda[combs$lambda_ix[i]],
+                    #     control = control,
+                    #     compute_edf = TRUE
+                    # )
+                    # beta_est <- model_fit$beta
+                    # edf <- model_fit$edf
+                    #
+                    # # Predicted calibration function values
+                    # H <- B %*% beta_est
+                    #
+                    # # Model likelihood
+                    # ll <- sum(sapply(seq_along(x), function(j) {
+                    #     loglik(NX[j, ], H[j, ])
+                    # }))
+                    ll <- edf <- 0
                     pbar()
                     return(list(ll = ll, edf = edf))
                 },
