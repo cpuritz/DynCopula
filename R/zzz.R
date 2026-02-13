@@ -29,7 +29,8 @@
     } else {
         config <- jsonlite::read_json(config_path)
         # Should never get here, but check to be safe
-        if ((is.null(config$py_path) || !file.exists(config$py_path))) {
+        py_path <- config$python_path
+        if ((is.null(py_path) || !file.exists(py_path))) {
             packageStartupMessage(msg)
         }
     }
