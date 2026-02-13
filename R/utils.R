@@ -14,8 +14,12 @@
 #'
 #' @export
 pkg_setup <- function(python_path) {
-    # Check that necessary modules are installed
+    message("DynCopula package setup")
+    message("    Loading Python interpreter...")
     reticulate::use_python(python = python_path, required = TRUE)
+
+    # Check that necessary modules are installed
+    message("    Verifying that necessary modules are installed...")
     mods <- c("numpy", "torch")
     for (m in mods) {
         if (!reticulate::py_module_available(m)) {
@@ -26,6 +30,7 @@ pkg_setup <- function(python_path) {
     }
 
     # Record the path to the Python interpreter
+    message("    Saving config...")
     config_dir <- rappdirs::user_config_dir("DynCopula")
     if (!dir.exists(config_dir)) {
         dir.create(config_dir)
