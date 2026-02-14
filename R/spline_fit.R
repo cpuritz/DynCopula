@@ -167,7 +167,7 @@ fit_spline_gaussian <- function(FX,
     # times on the same worker.
     .fit_env <- new.env(parent = emptyenv())
     py_path <- system.file("python", package = "DynCopula")
-    fit_fun <- function(par0, x, NX, B, lam, control, compute_edf) {
+    fit_fun <- function(par0, x, NX, B, lam, control, compute_edf, py_path) {
         # Load the module if it hasn't been loaded yet
         if (!exists("fit_fun", envir = .fit_env, inherits = FALSE)) {
             .fit_env$fit_fun <- reticulate::import_from_path(
@@ -207,6 +207,64 @@ fit_spline_gaussian <- function(FX,
 
     progressr::with_progress({
         pbar <- progressr::progressor(along = seq_len(ncomb + 1L))
+        res <- future.apply::future_lapply(
+            X = seq_len(ncomb),
+            FUN = function(i) {
+                # Spline basis matrix
+                B <- get_basis(x, df[combs$df_ix[i]])
+
+                # Initial coefficient estimates
+                npar <- choose(dim(NX)[2], 2)
+                par0 <- matrix(0, nrow = dim(B)[2], ncol = npar)
+
+                # Fit model
+                model_fit <- fit_fun(
+                    par0 = par0,
+                    x = x,
+                    NX = NX,
+                    B = B,
+                    lam = lambda[combs$lambda_ix[i]],
+                    control = control,
+                    compute_edf = TRUE,
+                    py_path = py_path
+                )
+                beta_est <- model_fit$beta
+                edf <- model_fit$edf
+
+                # Predicted calibration function values
+                H <- B %*% beta_est
+
+                # Model likelihood
+                ll <- sum(sapply(seq_along(x), function(j) {
+                    loglik(NX[j, ], H[j, ])
+                }))
+                pbar()
+                return(list(ll = ll, edf = edf))
+            },
+            future.seed = TRUE,
+            future.globals = list(
+                x = x, NX = NX, lambda = lambda, df = df, combs = combs,
+                pbar = pbar, get_basis = get_basis, loglik = loglik,
+                py_path = py_path
+            ),
+            future.packages = c("splines", "mvtnorm", "copula",
+                                "reticulate", "DynCopula")
+        )
+
+        edf <- sapply(res, '[[', "edf")
+        ll <- sapply(res, '[[', "ll")
+
+        # Convert indices for lambda and df to values
+        model_df <- data.frame(
+            lambda = lambda[combs$lambda_ix],
+            df = df[combs$df_ix],
+            edf = edf,
+            ll = ll,
+            aic = -2 * ll + 2 * edf
+        )
+
+        # Index for optimal hyperparameters
+        ix_opt <- which.min(model_df$aic)
 
         # if (model_select == "aic") {
         #     # Model selection via AIC
