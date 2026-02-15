@@ -1,7 +1,7 @@
 import torch
 import numpy as np
 from typing import Mapping, Union
-from corr_utils import _log_mvn_density
+from corr_utils import _log_mvn_density, _gaussian_cop_loglik
 
 ###############################################################################
 
@@ -12,6 +12,7 @@ def fit_gaussian_spline(
 	B: np.ndarray,
     lam: float,
     control: Mapping[str, Union[float, int]],
+    compute_ll: bool,
     compute_edf: bool
 ) -> Mapping[str, Union[np.ndarray, float]]:
 	"""
@@ -32,6 +33,8 @@ def fit_gaussian_spline(
 	    Smoothing parameter.
 	control :  Mapping[str, Union[float, int]]
 		Optimization control parameters.
+    compute_ll : bool
+	    Whether to compute model log-likelihood.
 	compute_edf : bool
 	    Whether to compute degrees of freedom.
 
@@ -53,6 +56,7 @@ def fit_gaussian_spline(
 	tolerance_change = float(control["tolerance_change"])
 	dtype = control["precision"]
 	lam = float(lam)
+	compute_ll = bool(compute_ll)
 	compute_edf = bool(compute_edf)
 	
 	if dtype == "float32":
@@ -103,8 +107,19 @@ def fit_gaussian_spline(
 	else:
 	    edf = np.nan
 	
+	if compute_ll:
+		H = torch.matmul(B, beta_hat)
+		ll = _gaussian_cop_loglik(
+			x = NX,
+			V = H.T.contiguous(),
+			dtype = dtype
+		).numpy()
+	else:
+		ll = np.nan
+	
 	return {
 	    "beta": beta_hat.numpy(),
+	    "ll": ll,
 	    "edf": edf
 	}
     

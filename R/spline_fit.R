@@ -167,7 +167,8 @@ fit_spline_gaussian <- function(FX,
     # times on the same worker.
     .fit_env <- new.env(parent = emptyenv())
     py_path <- system.file("python", package = "DynCopula")
-    fit_fun <- function(par0, x, NX, B, lam, control, compute_edf, py_path) {
+    fit_fun <- function(par0, x, NX, B, lam, control, compute_ll, compute_edf,
+                        py_path) {
         # Load the module if it hasn't been loaded yet
         if (!exists("fit_fun", envir = .fit_env, inherits = FALSE)) {
             .fit_env$fit_fun <- reticulate::import_from_path(
@@ -183,6 +184,7 @@ fit_spline_gaussian <- function(FX,
             B = B,
             lam = lam,
             control = control,
+            compute_ll = compute_ll,
             compute_edf = compute_edf
         )
     }
@@ -227,30 +229,20 @@ fit_spline_gaussian <- function(FX,
                         B = B,
                         lam = lambda[combs$lambda_ix[i]],
                         control = control,
+                        compute_ll = TRUE,
                         compute_edf = TRUE,
                         py_path = py_path
                     )
-                    beta_est <- model_fit$beta
-                    edf <- model_fit$edf
-
-                    # Predicted calibration function values
-                    H <- B %*% beta_est
-
-                    # Model likelihood
-                    ll <- sum(sapply(seq_along(x), function(j) {
-                        loglik(NX[j, ], H[j, ])
-                    }))
                     pbar()
-                    return(list(ll = ll, edf = edf))
+                    return(model_fit[c("ll", "edf")])
                 },
                 future.seed = TRUE,
                 future.globals = list(
                     x = x, NX = NX, lambda = lambda, df = df, combs = combs,
-                    pbar = pbar, get_basis = get_basis, loglik = loglik,
-                    py_path = py_path, npar = npar
+                    pbar = pbar, get_basis = get_basis, npar = npar,
+                    py_path = py_path, control = control
                 ),
-                future.packages = c("splines", "mvtnorm", "copula",
-                                    "reticulate", "DynCopula")
+                future.packages = c("splines", "reticulate", "DynCopula")
             )
 
             edf <- sapply(res, '[[', "edf")
@@ -292,6 +284,7 @@ fit_spline_gaussian <- function(FX,
                         B = B_train,
                         lam = lambda[combs$lambda_ix[i]],
                         control = control,
+                        compute_ll = FALSE,
                         compute_edf = FALSE,
                         py_path = py_path
                     )$beta
@@ -310,7 +303,8 @@ fit_spline_gaussian <- function(FX,
                 future.globals = list(
                     x = x, NX = NX, lambda = lambda, df = df, combs = combs,
                     pbar = pbar, get_basis = get_basis, loglik = loglik,
-                    py_path = py_path, fold_ids = fold_ids, npar = npar
+                    py_path = py_path, fold_ids = fold_ids, npar = npar,
+                    control = control
                 ),
                 future.packages = c("splines", "mvtnorm", "copula",
                                     "reticulate", "DynCopula")
@@ -353,6 +347,7 @@ fit_spline_gaussian <- function(FX,
             B = B,
             lam = lambda_opt,
             control = control,
+            compute_ll = FALSE,
             compute_edf = FALSE,
             py_path = py_path
         )$beta

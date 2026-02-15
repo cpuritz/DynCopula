@@ -51,6 +51,48 @@ def _log_mvn_density(
 
 ###############################################################################
 
+def _gaussian_cop_loglik(
+    x: torch.Tensor,
+    V: torch.Tensor,
+    dtype: torch.dtype
+) -> torch.Tensor:
+	"""
+	Compute the log-density of a multivariate Gaussian copula.
+
+ 	Parameters
+	----------
+	x : torch.Tensor
+        Input samples of shape `(N, d)`, where `d` is the dimensionality.
+    V : torch.Tensor
+        Either of shape `(npar,)` or `(npar, N)`. In the former case, one
+        covariance matrix is constructed for all samples. In the latter case,
+        one covariance matrix is constructed for each sample. `npar` must equal
+        `choose(d, 2)`.
+    dtype : torch.dtype
+        Floating-point precision.
+
+	Returns
+	-------
+	torch.Tensor
+		The total log-density over all samples under the parameterized
+		multivariate Gaussian copula.
+	"""
+	# Copula log-likelihood
+	copula_ll = _log_mvn_density(
+	    x = x,
+	    V = V,
+	    dtype = dtype
+	)
+	
+	# Marginal log-likelihood
+	log2pi = x.new_tensor(2.0 * math.pi).log()
+	margin_ll = (-0.5 * (x * x + log2pi)).sum(dim = 1)
+
+	# Sum over rows
+	return (copula_ll - margin_ll).sum()
+
+###############################################################################
+
 def _vec2chol(
     V: torch.Tensor,
     dtype: torch.dtype
