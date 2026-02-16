@@ -82,10 +82,13 @@ fit_spline_gaussian <- function(FX,
     }
 
     # Set up futures plan
-    cl <- parallel::makeCluster(as.integer(cores))
-    future::plan(future::cluster, workers = cl)
-    on.exit({ future::plan(future::sequential); parallel::stopCluster(cl) },
-            add = TRUE)
+    cores <- as.integer(cores)
+    if (cores > 1L) {
+        cl <- parallel::makeCluster(cores)
+        future::plan(future::cluster, workers = cl)
+        on.exit({ future::plan(future::sequential); parallel::stopCluster(cl) },
+                add = TRUE)
+    }
 
     # Default control parameters
     defaults <- list(
@@ -207,44 +210,50 @@ fit_spline_gaussian <- function(FX,
     }
     ncomb <- dim(combs)[1]
 
+    # Avoid setting up futures if no parallelization is requested
+    lfun <- ifelse(cores > 1L, future.apply::future_lapply, lapply)
+    largs <- list(X = seq_len(ncomb))
+
     progressr::with_progress({
         pbar <- progressr::progressor(along = seq_len(ncomb + 1L))
-
         if (model_select == "aic") {
             # Model selection via AIC
-            res <- future.apply::future_lapply(
-                X = seq_len(ncomb),
-                FUN = function(i) {
-                    # Spline basis matrix
-                    B <- get_basis(x, df[combs$df_ix[i]])
+            if (cores > 1L) {
+                largs <- c(largs, list(
+                    future.seed = TRUE,
+                    future.globals = list(
+                        x = x, NX = NX, lambda = lambda, df = df, combs = combs,
+                        pbar = pbar, get_basis = get_basis, npar = npar,
+                        py_path = py_path, control = control
+                    ),
+                    future.packages = c("splines", "reticulate", "DynCopula")
+                ))
+            }
 
-                    # Initial coefficient estimates
-                    par0 <- matrix(0, nrow = dim(B)[2], ncol = npar)
+            aic_fun <- function(i) {
+                # Spline basis matrix
+                B <- get_basis(x, df[combs$df_ix[i]])
 
-                    # Fit model
-                    model_fit <- fit_fun(
-                        par0 = par0,
-                        x = x,
-                        NX = NX,
-                        B = B,
-                        lam = lambda[combs$lambda_ix[i]],
-                        control = control,
-                        compute_ll = TRUE,
-                        compute_edf = TRUE,
-                        py_path = py_path
-                    )
-                    pbar()
-                    return(model_fit[c("ll", "edf")])
-                },
-                future.seed = TRUE,
-                future.globals = list(
-                    x = x, NX = NX, lambda = lambda, df = df, combs = combs,
-                    pbar = pbar, get_basis = get_basis, npar = npar,
-                    py_path = py_path, control = control
-                ),
-                future.packages = c("splines", "reticulate", "DynCopula")
-            )
+                # Initial coefficient estimates
+                par0 <- matrix(0, nrow = dim(B)[2], ncol = npar)
 
+                # Fit model
+                model_fit <- fit_fun(
+                    par0 = par0,
+                    x = x,
+                    NX = NX,
+                    B = B,
+                    lam = lambda[combs$lambda_ix[i]],
+                    control = control,
+                    compute_ll = TRUE,
+                    compute_edf = TRUE,
+                    py_path = py_path
+                )
+                pbar()
+                return(model_fit[c("ll", "edf")])
+            }
+            largs <- c(largs, list(FUN = aic_fun))
+            res <- do.call(what = lfun, args = largs)
             edf <- sapply(res, '[[', "edf")
             ll <- sapply(res, '[[', "ll")
 
@@ -261,54 +270,58 @@ fit_spline_gaussian <- function(FX,
             ix_opt <- which.min(model_df$aic)
         } else {
             # Model selection via cross-validation
-            cv <- future.apply::future_lapply(
-                X = seq_len(ncomb),
-                FUN = function(i) {
-                    # Train and test folds
-                    test_ix <- which(fold_ids == combs$fold[i])
-                    train_ix <- which(fold_ids != combs$fold[i])
+            if (cores > 1L) {
+                largs <- c(largs, list(
+                    future.seed = TRUE,
+                    future.globals = list(
+                        x = x, NX = NX, lambda = lambda, df = df, combs = combs,
+                        pbar = pbar, get_basis = get_basis, loglik = loglik,
+                        py_path = py_path, fold_ids = fold_ids, npar = npar,
+                        control = control
+                    ),
+                    future.packages = c("splines", "mvtnorm", "copula",
+                                        "reticulate", "DynCopula")
+                ))
+            }
 
-                    # Spline basis matrices
-                    B <- get_basis(x, df[combs$df_ix[i]])
-                    B_train <- B[train_ix, , drop = FALSE]
-                    B_test <- B[test_ix, , drop = FALSE]
+            cv_fun <- function(i) {
+                # Train and test folds
+                test_ix <- which(fold_ids == combs$fold[i])
+                train_ix <- which(fold_ids != combs$fold[i])
 
-                    # Initial coefficient estimates
-                    par0 <- matrix(0, nrow = dim(B)[2], ncol = npar)
+                # Spline basis matrices
+                B <- get_basis(x, df[combs$df_ix[i]])
+                B_train <- B[train_ix, , drop = FALSE]
+                B_test <- B[test_ix, , drop = FALSE]
 
-                    # Fit using training data
-                    beta_est <- fit_fun(
-                        par0 = par0,
-                        x = x[train_ix],
-                        NX = NX[train_ix, , drop = FALSE],
-                        B = B_train,
-                        lam = lambda[combs$lambda_ix[i]],
-                        control = control,
-                        compute_ll = FALSE,
-                        compute_edf = FALSE,
-                        py_path = py_path
-                    )$beta
+                # Initial coefficient estimates
+                par0 <- matrix(0, nrow = dim(B)[2], ncol = npar)
 
-                    # Predictions for test data
-                    H_test <- B_test %*% beta_est
+                # Fit using training data
+                beta_est <- fit_fun(
+                    par0 = par0,
+                    x = x[train_ix],
+                    NX = NX[train_ix, , drop = FALSE],
+                    B = B_train,
+                    lam = lambda[combs$lambda_ix[i]],
+                    control = control,
+                    compute_ll = FALSE,
+                    compute_edf = FALSE,
+                    py_path = py_path
+                )$beta
 
-                    # Cross-validated likelihood criterion
-                    ll <- sum(sapply(seq_along(test_ix), function(j) {
-                        loglik(NX[test_ix[j], ], H_test[j, ])
-                    }))
-                    pbar()
-                    return(ll)
-                },
-                future.seed = TRUE,
-                future.globals = list(
-                    x = x, NX = NX, lambda = lambda, df = df, combs = combs,
-                    pbar = pbar, get_basis = get_basis, loglik = loglik,
-                    py_path = py_path, fold_ids = fold_ids, npar = npar,
-                    control = control
-                ),
-                future.packages = c("splines", "mvtnorm", "copula",
-                                    "reticulate", "DynCopula")
-            )
+                # Predictions for test data
+                H_test <- B_test %*% beta_est
+
+                # Cross-validated likelihood criterion
+                ll <- sum(sapply(seq_along(test_ix), function(j) {
+                    loglik(NX[test_ix[j], ], H_test[j, ])
+                }))
+                pbar()
+                return(ll)
+            }
+            largs <- c(largs, list(FUN = cv_fun))
+            cv <- do.call(what = lfun, args = largs)
 
             # Sum likelihoods across folds
             ll_sum <- tapply(
@@ -318,6 +331,7 @@ fit_spline_gaussian <- function(FX,
             )
             cv_df <- as.data.frame(as.table(ll_sum))
             names(cv_df) <- c("lambda_ix", "df_ix", "ll")
+
             # Convert factor IDs to indices
             cv_df$lambda_ix <- as.integer(as.character(cv_df$lambda_ix))
             cv_df$df_ix <- as.integer(as.character(cv_df$df_ix))
