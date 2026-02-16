@@ -150,7 +150,11 @@ fit_spline_gaussian <- function(FX,
     py_intr <- jsonlite::read_json(conf_path)$python_path
     Sys.setenv(
         RETICULATE_PYTHON = py_intr,
-        RETICULATE_AUTOCONFIGURE = "FALSE"
+        RETICULATE_AUTOCONFIGURE = "FALSE",
+        OMP_NUM_THREADS = "1",
+        MKL_NUM_THREADS = "1",
+        OPENBLAS_NUM_THREADS = "1",
+        NUMEXPR_NUM_THREADS = "1"
     )
 
     if (run_parallel) {
