@@ -233,8 +233,6 @@ fit_spline_gaussian <- function(FX,
     lfun <- ifelse(run_parallel, future.apply::future_lapply, lapply)
     largs <- list(X = seq_len(ncomb))
 
-    message("Starting")
-
     progressr::with_progress({
         pbar <- progressr::progressor(along = seq_len(ncomb + 1L))
         if (model_select == "aic") {
