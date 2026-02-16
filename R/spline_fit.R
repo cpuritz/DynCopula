@@ -144,27 +144,30 @@ fit_spline_gaussian <- function(FX,
     }
 
     ## Python configuration ##
-    # Path to the Python interpreter
+    # Ensure correct Python interpreter is used
     conf_dir <- rappdirs::user_config_dir("DynCopula")
     conf_path <- file.path(conf_dir, "config.json")
     py_intr <- jsonlite::read_json(conf_path)$python_path
     Sys.setenv(
         RETICULATE_PYTHON = py_intr,
-        RETICULATE_AUTOCONFIGURE = "FALSE",
-        OMP_NUM_THREADS = "1",
-        MKL_NUM_THREADS = "1",
-        OPENBLAS_NUM_THREADS = "1",
-        NUMEXPR_NUM_THREADS = "1"
+        RETICULATE_AUTOCONFIGURE = "FALSE"
     )
 
     if (run_parallel) {
         # Set up cluster
         cl <- parallel::makeCluster(cores)
 
-        # Force Python initialization on workers
         parallel::clusterEvalQ(cl, {
             library(reticulate)
+
+            # Force Python initialization on workers
             reticulate::py_config()
+
+            # Disable multithreading to prevent oversubscription
+            torch <- reticulate::import("torch", delay_load = FALSE)
+            torch$set_num_interop_threads(1L)
+            torch$set_num_threads(1L)
+
             NULL
         })
 
