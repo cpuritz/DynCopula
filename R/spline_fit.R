@@ -153,7 +153,9 @@ fit_spline_gaussian <- function(FX,
         RETICULATE_AUTOCONFIGURE = "FALSE"
     )
 
-    if (run_parallel) {
+    if (!run_parallel) {
+        reticulate::py_config()
+    } else {
         # Set up cluster
         cl <- parallel::makeCluster(cores)
 
@@ -164,9 +166,9 @@ fit_spline_gaussian <- function(FX,
             reticulate::py_config()
 
             # Disable multithreading to prevent oversubscription
-            torch <- reticulate::import("torch", delay_load = FALSE)
-            torch$set_num_interop_threads(1L)
-            torch$set_num_threads(1L)
+            #torch <- reticulate::import("torch", delay_load = FALSE)
+            #torch$set_num_interop_threads(1L)
+            #torch$set_num_threads(1L)
 
             NULL
         })
