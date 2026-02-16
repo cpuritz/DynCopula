@@ -81,34 +81,9 @@ fit_spline_gaussian <- function(FX,
         nfold <- as.integer(nfold)
     }
 
-    # Set up futures plan
+    # Whether parallelization is required
     cores <- as.integer(cores)
     run_parallel <- (cores > 1L)
-
-    conf_path <- file.path(rappdirs::user_config_dir("DynCopula"), "config.json")
-    py_int <- jsonlite::read_json(conf_path)$python_path
-
-    if (run_parallel) {
-        cl <- parallel::makeCluster(cores)
-        parallel::clusterExport(cl, varlist = c("py_int"), envir = environment())
-        parallel::clusterEvalQ(cl, {
-            Sys.setenv(
-                RETICULATE_PYTHON = py_int,
-                RETICULATE_AUTOCONFIGURE = "FALSE",
-                OMP_NUM_THREADS = "1",
-                MKL_NUM_THREADS = "1",
-                OPENBLAS_NUM_THREADS = "1",
-                NUMEXPR_NUM_THREADS = "1"
-            )
-            library(reticulate)
-            reticulate::py_config()
-            NULL
-        })
-
-        future::plan(future::cluster, workers = cl)
-        on.exit({ future::plan(future::sequential); parallel::stopCluster(cl) },
-                add = TRUE)
-    }
 
     # Default control parameters
     defaults <- list(
@@ -157,21 +132,6 @@ fit_spline_gaussian <- function(FX,
     # Normal-transform pseudo-observations
     NX <- stats::qnorm(FX)
 
-    # Gaussian copula log likelihood
-    loglik <- function(NU, eta) {
-        if (any(is.na(eta) | is.nan(eta))) {
-            return(-1e12)
-        }
-        copula_ll <- mvtnorm::dmvnorm(
-            x = NU,
-            sigma = vec2cor(eta),
-            log = TRUE,
-            checkSymmetry = FALSE
-        )
-        margin_ll <- sum(stats::dnorm(NU, log = TRUE))
-        return(copula_ll - margin_ll)
-    }
-
     # Spline basis matrix with knot boundary extension
     knot_eps <- control$boundary
     get_basis <- function(x, df) {
@@ -181,6 +141,39 @@ fit_spline_gaussian <- function(FX,
             intercept = TRUE,
             Boundary.knots = c(-knot_eps, 1 + knot_eps)
         )
+    }
+
+    ## Python configuration ##
+    # Path to the Python interpreter
+    conf_dir <- rappdirs::user_config_dir("DynCopula")
+    conf_path <- file.path(conf_dir, "config.json")
+    py_intr <- jsonlite::read_json(conf_path)$python_path
+    Sys.setenv(
+        RETICULATE_PYTHON = py_intr,
+        RETICULATE_AUTOCONFIGURE = "FALSE",
+        OMP_NUM_THREADS = "1",
+        MKL_NUM_THREADS = "1",
+        OPENBLAS_NUM_THREADS = "1",
+        NUMEXPR_NUM_THREADS = "1"
+    )
+
+    if (run_parallel) {
+        # Set up cluster
+        cl <- parallel::makeCluster(cores)
+
+        # Force Python initialization on workers
+        parallel::clusterEvalQ(cl, {
+            library(reticulate)
+            reticulate::py_config()
+            NULL
+        })
+
+        # Set up futures plan
+        future::plan(future::cluster, workers = cl)
+        on.exit({
+            future::plan(future::sequential)
+            parallel::stopCluster(cl)
+        }, add = TRUE)
     }
 
     # Since Python functions are not serializable, we can't load the
@@ -237,16 +230,18 @@ fit_spline_gaussian <- function(FX,
     progressr::with_progress({
         pbar <- progressr::progressor(along = seq_len(ncomb + 1L))
         if (model_select == "aic") {
-            # Model selection via AIC
+            ## Model selection via AIC ##
+
             if (run_parallel) {
                 largs <- c(largs, list(
                     future.seed = TRUE,
                     future.globals = list(
                         x = x, NX = NX, lambda = lambda, df = df, combs = combs,
                         pbar = pbar, get_basis = get_basis, npar = npar,
-                        py_path = py_path, control = control
+                        py_path = py_path, control = control,
+                        .fit_env = .fit_env
                     ),
-                    future.packages = c("splines", "reticulate", "DynCopula")
+                    future.packages = c("splines", "DynCopula")
                 ))
             }
 
@@ -289,18 +284,18 @@ fit_spline_gaussian <- function(FX,
             # Index for optimal hyperparameters
             ix_opt <- which.min(model_df$aic)
         } else {
-            # Model selection via cross-validation
+            ## Model selection via cross-validation ##
             if (run_parallel) {
                 largs <- c(largs, list(
                     future.seed = TRUE,
                     future.globals = list(
                         x = x, NX = NX, lambda = lambda, df = df, combs = combs,
-                        pbar = pbar, get_basis = get_basis, loglik = loglik,
-                        py_path = py_path, fold_ids = fold_ids, npar = npar,
-                        control = control
+                        pbar = pbar, get_basis = get_basis, py_path = py_path,
+                        fold_ids = fold_ids, npar = npar, control = control,
+                        .fit_env = .fit_env
                     ),
                     future.packages = c("splines", "mvtnorm", "copula",
-                                        "reticulate", "DynCopula")
+                                        "DynCopula")
                 ))
             }
 
@@ -334,9 +329,25 @@ fit_spline_gaussian <- function(FX,
                 H_test <- B_test %*% beta_est
 
                 # Cross-validated likelihood criterion
-                ll <- sum(sapply(seq_along(test_ix), function(j) {
-                    loglik(NX[test_ix[j], ], H_test[j, ])
-                }))
+                margin_ll <- apply(
+                    X = stats::dnorm(NX[test_ix, , drop = FALSE], log = TRUE),
+                    MARGIN = 1,
+                    FUN = sum
+                )
+                copula_ll <- sapply(seq_along(test_ix), function(j) {
+                    eta <- H_test[j, ]
+                    if (any(is.na(eta) | is.nan(eta))) {
+                        return(-1e12)
+                    }
+                    mvtnorm::dmvnorm(
+                        x = NX[test_ix[j], ],
+                        sigma = vec2cor(eta),
+                        log = TRUE,
+                        checkSymmetry = FALSE
+                    )
+                })
+                ll <- sum(copula_ll - margin_ll)
+
                 pbar()
                 return(ll)
             }
