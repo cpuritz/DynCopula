@@ -154,6 +154,7 @@ fit_spline_gaussian <- function(FX,
     )
 
     if (!run_parallel) {
+        # Force Python initialization
         reticulate::py_config()
     } else {
         # Set up cluster
