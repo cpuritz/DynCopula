@@ -166,9 +166,9 @@ fit_spline_gaussian <- function(FX,
             reticulate::py_config()
 
             # Disable multithreading to prevent oversubscription
-            #torch <- reticulate::import("torch", delay_load = FALSE)
-            #torch$set_num_interop_threads(1L)
-            #torch$set_num_threads(1L)
+            torch <- reticulate::import("torch", delay_load = FALSE)
+            torch$set_num_interop_threads(1L)
+            torch$set_num_threads(1L)
 
             NULL
         })
