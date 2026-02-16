@@ -9,8 +9,7 @@
 #' duplicates.
 #' @param lambda Vector of smoothing parameters to test. Default is
 #' \code{10^(seq(-5, 5, length.out = 7))}.
-#' @param df Vector of degrees of freedom for the spline basis matrix to test.
-#' Default is \code{c(10, 50, 100)}.
+#' @param K Dimension of the spline basis matrix. Default is \code{30}.
 #' @param model_select Method for model selection. Either \code{"aic"} (Akaike
 #' information criterion) or \code{"cv"} (cross-validation).
 #' @param nfold Number of folds for cross-validation. Default is \code{5}.
@@ -36,10 +35,12 @@
 #'   Default is \code{0.05}.
 #' }
 #'
-#' The model hyperparameters are selected from the values specified by
-#' \code{lambda} and \code{df}. The model selection method is specified by
+#' The smoothing parameter is selected from the values specified by
+#' \code{lambda}. The model selection method is specified by
 #' \code{model_select}. Cross-validation will take approximately \code{nfold}
-#' times longer than AIC, but may be more accurate.
+#' times longer than AIC, but may be more accurate. This function is
+#' parallelized over the model selection process, so
+#' \code{cores > length(lambda)} will not lead to quicker evaluation.
 #'
 #' @return A list with the following components:
 #' \itemize{
@@ -49,7 +50,6 @@
 #'   \item \code{eta}: Matrix of estimated calibration coefficients.
 #'   \item \code{rho}: Matrix of estimated pairwise correlation coefficients.
 #'   \item \code{lambda}: The optimal smoothing parameter.
-#'   \item \code{df}: The optimal degrees of freedom.
 #'   \item \code{model_select}: Model selection results.
 #' }
 #'
@@ -57,7 +57,7 @@
 fit_spline_gaussian <- function(FX,
                                 x,
                                 lambda = 10^(seq(-5, 5, length.out = 7)),
-                                df = c(10, 50, 100),
+                                K = 30,
                                 model_select = c("aic", "cv"),
                                 nfold = 5,
                                 cores = 1,
@@ -68,7 +68,7 @@ fit_spline_gaussian <- function(FX,
         !anyDuplicated(x),
         dim(FX)[1] == length(x),
         is.vector(lambda, mode = "numeric") && all(lambda > 0),
-        is.vector(df, mode = "numeric") && all(df >= 1),
+        is.numeric(K) && K > 1,
         is.character(model_select),
         is.numeric(cores) && cores >= 1,
         is.list(control)
@@ -134,10 +134,10 @@ fit_spline_gaussian <- function(FX,
 
     # Spline basis matrix with knot boundary extension
     knot_eps <- control$boundary
-    get_basis <- function(x, df) {
+    get_basis <- function(x) {
         splines::ns(
             x = x,
-            df = df,
+            df = K,
             intercept = TRUE,
             Boundary.knots = c(-knot_eps, 1 + knot_eps)
         )
@@ -159,7 +159,6 @@ fit_spline_gaussian <- function(FX,
     } else {
         # Set up cluster
         cl <- parallel::makeCluster(cores)
-
         parallel::clusterEvalQ(cl, {
             library(reticulate)
 
@@ -212,18 +211,15 @@ fit_spline_gaussian <- function(FX,
     }
 
     if (model_select == "aic") {
-        # All combinations of lambda and df
         combs <- expand.grid(
-            lambda_ix = seq_along(lambda),
-            df_ix = seq_along(df)
+            lambda_ix = seq_along(lambda)
         )
     } else {
         # K-fold cross validation with equal-sized contiguous blocks
         fold_ids <- cut(seq_along(x), breaks = nfold, labels = FALSE)
-        # All combinations of lambda df, and folds
+        # All combinations of smoothing parameter and test fold ID
         combs <- expand.grid(
             lambda_ix = seq_along(lambda),
-            df_ix = seq_along(df),
             fold = seq_len(nfold)
         )
     }
@@ -242,7 +238,7 @@ fit_spline_gaussian <- function(FX,
                 largs <- c(largs, list(
                     future.seed = TRUE,
                     future.globals = list(
-                        x = x, NX = NX, lambda = lambda, df = df, combs = combs,
+                        x = x, NX = NX, lambda = lambda, combs = combs,
                         pbar = pbar, get_basis = get_basis, npar = npar,
                         py_path = py_path, control = control,
                         .fit_env = .fit_env
@@ -253,7 +249,7 @@ fit_spline_gaussian <- function(FX,
 
             aic_fun <- function(i) {
                 # Spline basis matrix
-                B <- get_basis(x, df[combs$df_ix[i]])
+                B <- get_basis(x)
 
                 # Initial coefficient estimates
                 par0 <- matrix(0, nrow = dim(B)[2], ncol = npar)
@@ -278,10 +274,9 @@ fit_spline_gaussian <- function(FX,
             edf <- sapply(res, '[[', "edf")
             ll <- sapply(res, '[[', "ll")
 
-            # Convert indices for lambda and df to values
+            # Convert indices for lambda to values
             model_df <- data.frame(
                 lambda = lambda[combs$lambda_ix],
-                df = df[combs$df_ix],
                 edf = edf,
                 ll = ll,
                 aic = -2 * ll + 2 * edf
@@ -295,7 +290,7 @@ fit_spline_gaussian <- function(FX,
                 largs <- c(largs, list(
                     future.seed = TRUE,
                     future.globals = list(
-                        x = x, NX = NX, lambda = lambda, df = df, combs = combs,
+                        x = x, NX = NX, lambda = lambda, combs = combs,
                         pbar = pbar, get_basis = get_basis, py_path = py_path,
                         fold_ids = fold_ids, npar = npar, control = control,
                         .fit_env = .fit_env
@@ -310,7 +305,7 @@ fit_spline_gaussian <- function(FX,
                 train_ix <- which(fold_ids != combs$fold[i])
 
                 # Spline basis matrices
-                B <- get_basis(x, df[combs$df_ix[i]])
+                B <- get_basis(x)
                 B_train <- B[train_ix, , drop = FALSE]
                 B_test <- B[test_ix, , drop = FALSE]
 
@@ -362,20 +357,18 @@ fit_spline_gaussian <- function(FX,
             # Sum likelihoods across folds
             ll_sum <- tapply(
                 X = unlist(cv),
-                INDEX = list(combs$lambda_ix, combs$df_ix),
+                INDEX = list(combs$lambda_ix),
                 FUN = sum
             )
             cv_df <- as.data.frame(as.table(ll_sum))
-            names(cv_df) <- c("lambda_ix", "df_ix", "ll")
+            names(cv_df) <- c("lambda_ix", "ll")
 
             # Convert factor IDs to indices
             cv_df$lambda_ix <- as.integer(as.character(cv_df$lambda_ix))
-            cv_df$df_ix <- as.integer(as.character(cv_df$df_ix))
 
-            # Convert indices for lambda and df to values
+            # Convert indices for lambda to values
             model_df <- data.frame(
                 lambda = lambda[cv_df$lambda_ix],
-                df = df[cv_df$df_ix],
                 ll = cv_df$ll
             )
 
@@ -383,13 +376,12 @@ fit_spline_gaussian <- function(FX,
             ix_opt <- which.max(model_df$ll)
         }
 
-        # Optimal hyperparameters
+        # Optimal smoothing parameter
         lambda_opt <- model_df$lambda[ix_opt]
-        df_opt <- model_df$df[ix_opt]
 
-        # Estimation using the selected hyperparameters
-        B <- get_basis(x, df_opt)
-        par0 <- matrix(data = 0, nrow = df_opt, ncol = npar)
+        # Estimation using the selected smoothing parameter
+        B <- get_basis(x)
+        par0 <- matrix(data = 0, nrow = dim(B)[2], ncol = npar)
         beta_opt <- fit_fun(
             par0 = par0,
             x = x,
@@ -432,7 +424,6 @@ fit_spline_gaussian <- function(FX,
         eta = Hhat,
         rho = Rhat,
         lambda = lambda_opt,
-        df = df_opt,
         model_select = model_df
     ))
 }

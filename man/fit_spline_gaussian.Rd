@@ -8,7 +8,7 @@ fit_spline_gaussian(
   FX,
   x,
   lambda = 10^(seq(-5, 5, length.out = 7)),
-  df = c(10, 50, 100),
+  df = 30,
   model_select = c("aic", "cv"),
   nfold = 5,
   cores = 1,
@@ -24,8 +24,8 @@ duplicates.}
 \item{lambda}{Vector of smoothing parameters to test. Default is
 \code{10^(seq(-5, 5, length.out = 7))}.}
 
-\item{df}{Vector of degrees of freedom for the spline basis matrix to test.
-Default is \code{c(10, 50, 100)}.}
+\item{df}{Degrees of freedom for the spline basis matrix. Default is
+\code{30}.}
 
 \item{model_select}{Method for model selection. Either \code{"aic"} (Akaike
 information criterion) or \code{"cv"} (cross-validation).}
@@ -46,7 +46,6 @@ A list with the following components:
   \item \code{eta}: Matrix of estimated calibration coefficients.
   \item \code{rho}: Matrix of estimated pairwise correlation coefficients.
   \item \code{lambda}: The optimal smoothing parameter.
-  \item \code{df}: The optimal degrees of freedom.
   \item \code{model_select}: Model selection results.
 }
 }
@@ -72,8 +71,10 @@ parameters can be supplied:
   Default is \code{0.05}.
 }
 
-The model hyperparameters are selected from the values specified by
-\code{lambda} and \code{df}. The model selection method is specified by
+The smoothing parameter is selected from the values specified by
+\code{lambda}. The model selection method is specified by
 \code{model_select}. Cross-validation will take approximately \code{nfold}
-times longer than AIC, but may be more accurate.
+times longer than AIC, but may be more accurate. This function is
+parallelized over the model selection process, so
+\code{cores > length(lambda)} will not lead to quicker evaluation.
 }
