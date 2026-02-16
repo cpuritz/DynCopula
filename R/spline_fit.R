@@ -150,11 +150,7 @@ fit_spline_gaussian <- function(FX,
     py_intr <- jsonlite::read_json(conf_path)$python_path
     Sys.setenv(
         RETICULATE_PYTHON = py_intr,
-        RETICULATE_AUTOCONFIGURE = "FALSE",
-        OMP_NUM_THREADS = "1",
-        MKL_NUM_THREADS = "1",
-        OPENBLAS_NUM_THREADS = "1",
-        NUMEXPR_NUM_THREADS = "1"
+        RETICULATE_AUTOCONFIGURE = "FALSE"
     )
 
     if (run_parallel) {
@@ -241,7 +237,7 @@ fit_spline_gaussian <- function(FX,
                         py_path = py_path, control = control,
                         .fit_env = .fit_env
                     ),
-                    future.packages = c("splines", "DynCopula")
+                    future.packages = c("splines")
                 ))
             }
 
@@ -294,8 +290,7 @@ fit_spline_gaussian <- function(FX,
                         fold_ids = fold_ids, npar = npar, control = control,
                         .fit_env = .fit_env
                     ),
-                    future.packages = c("splines", "mvtnorm", "copula",
-                                        "DynCopula")
+                    future.packages = c("splines", "mvtnorm", "copula")
                 ))
             }
 
