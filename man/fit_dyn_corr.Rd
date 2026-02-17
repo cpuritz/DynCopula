@@ -7,7 +7,7 @@
 fit_dyn_corr(
   sce,
   lambda = 10^(seq(-5, 5, length.out = 7)),
-  df = c(10, 50, 100),
+  K = 30,
   nfold = 5,
   control = list()
 )
@@ -18,7 +18,7 @@ fit_dyn_corr(
 \item{lambda}{Vector of smoothing parameters. Default is
 \code{10^(seq(-5, 5, length.out = 7))}.}
 
-\item{df}{Vector of degrees of freedom. Default is \code{c(10, 50, 100)}.}
+\item{K}{Vector of degrees of freedom. Default is \code{c(10, 50, 100)}.}
 
 \item{nfold}{Number of folds for cross-validation. Default is \code{5}.}
 
@@ -42,8 +42,7 @@ likelihood.
 This function can only be run after
 \link[DynCopula]{generate_metacells} has been run.
 
-Cross-validation is used to select the values of \code{lambda} and
-\code{df}.
+Cross-validation is used to select the value of \code{lambda}.
 
 Optimization is performed using L-BFGS. The \code{control} argument
 is a list that supplies control parameters for optimization. The following

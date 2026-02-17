@@ -8,15 +8,14 @@
 #' @param sce A \code{SingleCellExperiment}.
 #' @param lambda Vector of smoothing parameters. Default is
 #' \code{10^(seq(-5, 5, length.out = 7))}.
-#' @param df Vector of degrees of freedom. Default is \code{c(10, 50, 100)}.
+#' @param K Vector of degrees of freedom. Default is \code{c(10, 50, 100)}.
 #' @param nfold Number of folds for cross-validation. Default is \code{5}.
 #' @param control A \code{list} of control parameters for optimization.
 #'
 #' @details This function can only be run after
 #' \link[DynCopula]{generate_metacells} has been run.
 #'
-#' Cross-validation is used to select the values of \code{lambda} and
-#' \code{df}.
+#' Cross-validation is used to select the value of \code{lambda}.
 #'
 #' Optimization is performed using L-BFGS. The \code{control} argument
 #' is a list that supplies control parameters for optimization. The following
@@ -44,7 +43,7 @@
 #' @export
 fit_dyn_corr <- function(sce,
                          lambda = 10^(seq(-5, 5, length.out = 7)),
-                         df = c(10, 50, 100),
+                         K = 30,
                          nfold = 5,
                          control = list()) {
     assert_that(
@@ -67,7 +66,7 @@ fit_dyn_corr <- function(sce,
         FX = FX,
         x = pseudotimes,
         lambda = lambda,
-        df = df,
+        K = K,
         nfold = nfold,
         cores = dyn_corr$cores,
         control = control

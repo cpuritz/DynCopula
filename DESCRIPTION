@@ -20,7 +20,6 @@ Imports:
     jsonlite,
     Matrix,
     methods,
-    mvtnorm,
     parallel,
     progressr,
     rappdirs,

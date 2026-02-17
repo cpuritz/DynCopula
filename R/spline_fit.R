@@ -10,10 +10,7 @@
 #' @param lambda Vector of smoothing parameters to test. Default is
 #' \code{10^(seq(-5, 5, length.out = 7))}.
 #' @param K Dimension of the spline basis matrix. Default is \code{30}.
-#' @param model_select Method for model selection. Either \code{"aic"} (Akaike
-#' information criterion) or \code{"cv"} (cross-validation).
 #' @param nfold Number of folds for cross-validation. Default is \code{5}.
-#' Only used if \code{model_select = "cv"}.
 #' @param cores Number of cores to use. Default is \code{1}.
 #' @param control A \code{list} of control parameters for optimization.
 #'
@@ -21,26 +18,17 @@
 #' is a list that supplies control parameters for optimization. The following
 #' parameters can be supplied:
 #' \itemize{
-#'   \item \code{max_outer} Number of outer iterations. Default is \code{1}.
-#'   \item \code{max_itr} Maximum number of inner iterations. Default is
-#'   \code{100}.
+#'   \item \code{max_itr} Maximum number of iterations. Default is \code{100}.
 #'   \item \code{history_size} History size. Default is \code{30}.
 #'   \item \code{tolerance_grad} Termination tolerance for gradient. Default is
 #'   \code{1e-7}.
 #'   \item \code{tolerance_change} Termination tolerance for log-likelihood.
 #'   Default is \code{1e-9}.
 #'   \item \code{precision}: Floating precision. Either \code{"float32"} or
-#'   \code{"float64"}. Default is \code{"float32"}.
+#'   \code{"float64"}. Default is \code{"float64"}.
 #'   \item \code{boundary}: Boundary extension for spline knot boundaries.
 #'   Default is \code{0.05}.
 #' }
-#'
-#' The smoothing parameter is selected from the values specified by
-#' \code{lambda}. The model selection method is specified by
-#' \code{model_select}. Cross-validation will take approximately \code{nfold}
-#' times longer than AIC, but may be more accurate. This function is
-#' parallelized over the model selection process, so
-#' \code{cores > length(lambda)} will not lead to quicker evaluation.
 #'
 #' @return A list with the following components:
 #' \itemize{
@@ -50,7 +38,7 @@
 #'   \item \code{eta}: Matrix of estimated calibration coefficients.
 #'   \item \code{rho}: Matrix of estimated pairwise correlation coefficients.
 #'   \item \code{lambda}: The optimal smoothing parameter.
-#'   \item \code{model_select}: Model selection results.
+#'   \item \code{cv}: Cross-validation results.
 #' }
 #'
 #' @export
@@ -58,7 +46,6 @@ fit_spline_gaussian <- function(FX,
                                 x,
                                 lambda = 10^(seq(-5, 5, length.out = 7)),
                                 K = 30,
-                                model_select = c("aic", "cv"),
                                 nfold = 5,
                                 cores = 1,
                                 control = list()) {
@@ -69,30 +56,23 @@ fit_spline_gaussian <- function(FX,
         dim(FX)[1] == length(x),
         is.vector(lambda, mode = "numeric") && all(lambda > 0),
         is.numeric(K) && K > 1,
-        is.character(model_select),
+        is.numeric(nfold) && nfold >= 2,
         is.numeric(cores) && cores >= 1,
         is.list(control)
     )
 
-    # Model selection method
-    model_select <- match.arg(model_select)
-    if (model_select == "cv") {
-        assert_that(is.numeric(nfold) && nfold >= 2)
-        nfold <- as.integer(nfold)
-    }
-
     # Whether parallelization is required
     cores <- as.integer(cores)
-    run_parallel <- (cores > 1L)
+    run_cv <- (length(lambda) > 1)
+    run_parallel <- (cores > 1L) && run_cv
 
     # Default control parameters
     defaults <- list(
-        max_outer = 1L,
         max_itr = 100L,
         history_size = 30L,
         tolerance_grad = 1e-7,
         tolerance_change = 1e-9,
-        precision = "float32",
+        precision = "float64",
         boundary = 0.05
     )
     control <- utils::modifyList(defaults, control)
@@ -101,7 +81,6 @@ fit_spline_gaussian <- function(FX,
     # Verify control parameters
     assert_that(
         all(sapply(control[names(control) != "precision"], is.numeric)),
-        control$max_outer >= 1,
         control$max_itr >= 1,
         control$history_size >= 1,
         control$tolerance_grad > 0,
@@ -109,13 +88,8 @@ fit_spline_gaussian <- function(FX,
         control$precision %in% c("float32", "float64"),
         control$boundary >= 0
     )
-    control$max_outer <- as.integer(control$max_outer)
     control$max_itr <- as.integer(control$max_itr)
     control$history_size <- as.integer(control$history_size)
-
-    # Dimension and number of parameters
-    d <- dim(FX)[2]
-    npar <- choose(d, 2)
 
     # Sort covariates if needed
     if (is.unsorted(x)) {
@@ -132,18 +106,14 @@ fit_spline_gaussian <- function(FX,
     # Normal-transform pseudo-observations
     NX <- stats::qnorm(FX)
 
-    # Spline basis matrix with knot boundary extension
-    knot_eps <- control$boundary
-    get_basis <- function(x) {
-        splines::ns(
-            x = x,
-            df = K,
-            intercept = TRUE,
-            Boundary.knots = c(-knot_eps, 1 + knot_eps)
-        )
-    }
+    # Spline basis matrix
+    B <- splines::ns(
+        x = x,
+        df = K,
+        intercept = TRUE,
+        Boundary.knots = c(-control$boundary, 1 + control$boundary)
+    )
 
-    ## Python configuration ##
     # Ensure correct Python interpreter is used
     conf_dir <- rappdirs::user_config_dir("DynCopula")
     conf_path <- file.path(conf_dir, "config.json")
@@ -153,19 +123,30 @@ fit_spline_gaussian <- function(FX,
         RETICULATE_AUTOCONFIGURE = "FALSE"
     )
 
+    # Location of Python files
+    py_path <- system.file("python", package = "DynCopula")
+
     if (!run_parallel) {
         # Force Python initialization
         reticulate::py_config()
     } else {
-        # Set up cluster
+        # Create cluster
         cl <- parallel::makeCluster(cores)
+        # These variables never change, so export them now to avoid having to
+        # pass them as arguments to fit_fun.
+        parallel::clusterExport(
+            cl = cl,
+            varlist = c("control", "py_path"),
+            envir = environment()
+        )
+        # Initialize cluster
         parallel::clusterEvalQ(cl, {
             library(reticulate)
 
             # Force Python initialization on workers
             reticulate::py_config()
 
-            # Disable multithreading to prevent oversubscription
+            # Disable torch multithreading to prevent oversubscription
             torch <- reticulate::import("torch", delay_load = FALSE)
             torch$set_num_interop_threads(1L)
             torch$set_num_threads(1L)
@@ -182,177 +163,99 @@ fit_spline_gaussian <- function(FX,
     }
 
     # Since Python functions are not serializable, we can't load the
-    # optimization function in the global environment. Instead, the function
+    # optimization functions in the global environment. Instead, the functions
     # needs to be loaded on each worker. This environment stores the
-    # function once it has been loaded to avoid having to do it multiple
+    # Python module once it has been loaded to avoid having to do it multiple
     # times on the same worker.
     .fit_env <- new.env(parent = emptyenv())
-    py_path <- system.file("python", package = "DynCopula")
-    fit_fun <- function(par0, x, NX, B, lam, control, compute_ll, compute_edf,
-                        py_path) {
+    fit_fun <- function(NX, B, lam) {
         # Load the module if it hasn't been loaded yet
-        if (!exists("fit_fun", envir = .fit_env, inherits = FALSE)) {
-            .fit_env$fit_fun <- reticulate::import_from_path(
+        if (!exists("module", envir = .fit_env, inherits = FALSE)) {
+            .fit_env$module <- reticulate::import_from_path(
                 module = "spline_gaussian",
                 path = py_path,
                 delay_load = FALSE
-            )$fit_gaussian_spline
+            )
         }
-        .fit_env$fit_fun(
-            par0 = par0,
-            x = x,
+        .fit_env$module$fit_gaussian_spline(
             NX = NX,
             B = B,
             lam = lam,
-            control = control,
-            compute_ll = compute_ll,
-            compute_edf = compute_edf
+            control = control       # already exported to workers
         )
     }
 
-    if (model_select == "aic") {
-        combs <- expand.grid(
-            lambda_ix = seq_along(lambda)
-        )
-    } else {
-        # K-fold cross validation with equal-sized contiguous blocks
+    if (run_cv) {
+        cv_fun <- function(NX, B, lam, train_ix, test_ix) {
+            # Load the module if it hasn't been loaded yet
+            if (!exists("module", envir = .fit_env, inherits = FALSE)) {
+                .fit_env$module <- reticulate::import_from_path(
+                    module = "spline_gaussian",
+                    path = py_path,
+                    delay_load = FALSE
+                )
+            }
+            .fit_env$module$gaussian_spline_cv(
+                NX = NX,
+                B = B,
+                lam = lam,
+                control = control,      # already exported to workers
+                train_ix = train_ix,
+                test_ix = test_ix
+            )
+        }
+
+        # N-fold cross validation with equal-sized contiguous blocks
+        nfold <- as.integer(nfold)
         fold_ids <- cut(seq_along(x), breaks = nfold, labels = FALSE)
         # All combinations of smoothing parameter and test fold ID
         combs <- expand.grid(
             lambda_ix = seq_along(lambda),
             fold = seq_len(nfold)
         )
-    }
-    ncomb <- dim(combs)[1]
+        ncomb <- dim(combs)[1]
 
-    # Avoid setting up futures if no parallelization is requested
-    lfun <- ifelse(run_parallel, future.apply::future_lapply, lapply)
-    largs <- list(X = seq_len(ncomb))
+        # Avoid setting up futures if no parallelization is requested
+        lfun <- ifelse(run_parallel, future.apply::future_lapply, lapply)
+        largs <- list(X = seq_len(ncomb))
 
-    progressr::with_progress({
-        pbar <- progressr::progressor(along = seq_len(ncomb + 1L))
-        if (model_select == "aic") {
-            ## Model selection via AIC ##
+        progressr::with_progress({
+            pbar <- progressr::progressor(along = seq_len(ncomb + 1L))
 
             if (run_parallel) {
+                # Variables to export to workers
+                future_globals <- list(
+                    NX = NX,
+                    lambda = lambda,
+                    B = B,
+                    fold_ids = fold_ids,
+                    combs = combs,
+                    .fit_env = .fit_env
+                )
+
+                # Packages to load on workers
+                future_packages <- c("splines")
+
                 largs <- c(largs, list(
                     future.seed = TRUE,
-                    future.globals = list(
-                        x = x, NX = NX, lambda = lambda, combs = combs,
-                        pbar = pbar, get_basis = get_basis, npar = npar,
-                        py_path = py_path, control = control,
-                        .fit_env = .fit_env
-                    ),
-                    future.packages = c("splines")
+                    future.globals = future_globals,
+                    future.packages = future_packages
                 ))
             }
 
-            aic_fun <- function(i) {
-                # Spline basis matrix
-                B <- get_basis(x)
-
-                # Initial coefficient estimates
-                par0 <- matrix(0, nrow = dim(B)[2], ncol = npar)
-
-                # Fit model
-                model_fit <- fit_fun(
-                    par0 = par0,
-                    x = x,
+            # Model selection via cross-validation
+            ll_fun <- function(i) {
+                ll <- cv_fun(
                     NX = NX,
                     B = B,
                     lam = lambda[combs$lambda_ix[i]],
-                    control = control,
-                    compute_ll = TRUE,
-                    compute_edf = TRUE,
-                    py_path = py_path
+                    train_ix = which(fold_ids != combs$fold[i]),
+                    test_ix = which(fold_ids == combs$fold[i])
                 )
-                pbar()
-                return(model_fit[c("ll", "edf")])
-            }
-            largs <- c(largs, list(FUN = aic_fun))
-            res <- do.call(what = lfun, args = largs)
-            edf <- sapply(res, '[[', "edf")
-            ll <- sapply(res, '[[', "ll")
-
-            # Convert indices for lambda to values
-            model_df <- data.frame(
-                lambda = lambda[combs$lambda_ix],
-                edf = edf,
-                ll = ll,
-                aic = -2 * ll + 2 * edf
-            )
-
-            # Index for optimal hyperparameters
-            ix_opt <- which.min(model_df$aic)
-        } else {
-            ## Model selection via cross-validation ##
-            if (run_parallel) {
-                largs <- c(largs, list(
-                    future.seed = TRUE,
-                    future.globals = list(
-                        x = x, NX = NX, lambda = lambda, combs = combs,
-                        pbar = pbar, get_basis = get_basis, py_path = py_path,
-                        fold_ids = fold_ids, npar = npar, control = control,
-                        .fit_env = .fit_env
-                    ),
-                    future.packages = c("splines", "mvtnorm", "copula")
-                ))
-            }
-
-            cv_fun <- function(i) {
-                # Train and test folds
-                test_ix <- which(fold_ids == combs$fold[i])
-                train_ix <- which(fold_ids != combs$fold[i])
-
-                # Spline basis matrices
-                B <- get_basis(x)
-                B_train <- B[train_ix, , drop = FALSE]
-                B_test <- B[test_ix, , drop = FALSE]
-
-                # Initial coefficient estimates
-                par0 <- matrix(0, nrow = dim(B)[2], ncol = npar)
-
-                # Fit using training data
-                beta_est <- fit_fun(
-                    par0 = par0,
-                    x = x[train_ix],
-                    NX = NX[train_ix, , drop = FALSE],
-                    B = B_train,
-                    lam = lambda[combs$lambda_ix[i]],
-                    control = control,
-                    compute_ll = FALSE,
-                    compute_edf = FALSE,
-                    py_path = py_path
-                )$beta
-
-                # Predictions for test data
-                H_test <- B_test %*% beta_est
-
-                # Cross-validated likelihood criterion
-                margin_ll <- apply(
-                    X = stats::dnorm(NX[test_ix, , drop = FALSE], log = TRUE),
-                    MARGIN = 1,
-                    FUN = sum
-                )
-                copula_ll <- sapply(seq_along(test_ix), function(j) {
-                    eta <- H_test[j, ]
-                    if (any(is.na(eta) | is.nan(eta))) {
-                        return(-1e12)
-                    }
-                    mvtnorm::dmvnorm(
-                        x = NX[test_ix[j], ],
-                        sigma = vec2cor(eta),
-                        log = TRUE,
-                        checkSymmetry = FALSE
-                    )
-                })
-                ll <- sum(copula_ll - margin_ll)
-
                 pbar()
                 return(ll)
             }
-            largs <- c(largs, list(FUN = cv_fun))
-            cv <- do.call(what = lfun, args = largs)
+            cv <- do.call(what = lfun, args = c(largs, list(FUN = ll_fun)))
 
             # Sum likelihoods across folds
             ll_sum <- tapply(
@@ -361,55 +264,42 @@ fit_spline_gaussian <- function(FX,
                 FUN = sum
             )
             cv_df <- as.data.frame(as.table(ll_sum))
-            names(cv_df) <- c("lambda_ix", "ll")
+            names(cv_df) <- c("lambda", "ll")
 
-            # Convert factor IDs to indices
-            cv_df$lambda_ix <- as.integer(as.character(cv_df$lambda_ix))
+            # Convert factor IDs to indices and then to values
+            cv_df$lambda <- lambda[as.integer(as.character(cv_df$lambda))]
 
-            # Convert indices for lambda to values
-            model_df <- data.frame(
-                lambda = lambda[cv_df$lambda_ix],
-                ll = cv_df$ll
-            )
+            # Optimal value of lambda
+            lambda_opt <- cv_df$lambda[which.max(cv_df$ll)]
+        })
+    } else {
+        # Only one lambda value passed, so no cross-validation needed
+        lambda_opt <- lambda
+        cv_df <- NULL
+    }
 
-            # Index for optimal hyperparameters
-            ix_opt <- which.max(model_df$ll)
-        }
-
-        # Optimal smoothing parameter
-        lambda_opt <- model_df$lambda[ix_opt]
-
-        # Estimation using the selected smoothing parameter
-        B <- get_basis(x)
-        par0 <- matrix(data = 0, nrow = dim(B)[2], ncol = npar)
-        beta_opt <- fit_fun(
-            par0 = par0,
-            x = x,
-            NX = NX,
-            B = B,
-            lam = lambda_opt,
-            control = control,
-            compute_ll = FALSE,
-            compute_edf = FALSE,
-            py_path = py_path
-        )$beta
-        pbar()
-    })
+    # Fit model using the optimal smoothing parameter
+    beta_hat <- fit_fun(
+        NX = NX,
+        B = B,
+        lam = lambda_opt
+    )
 
     # Matrix of estimated calibration coefficients
-    Hhat <- B %*% beta_opt
+    Hhat <- B %*% beta_hat
     # Matrix of estimated correlation coefficients
     Rhat <- t(apply(Hhat, 1, function(v) {
         copula::P2p(vec2cor(v))
     }))
 
     # Ensure consistent shape of Rhat across all dimensions
+    d <- dim(FX)[2]
     if (d == 2L) {
         Rhat <- t(Rhat)
     }
 
     # Add numbered eta/rho labels
-    colnames(Hhat) <- paste0("eta", seq_len(npar))
+    colnames(Hhat) <- paste0("eta", seq_len(choose(d, 2)))
     ix_lab <- apply(utils::combn(seq_len(d), 2), 2, function(x) {
         paste(x, collapse = '_')
     })
@@ -424,7 +314,7 @@ fit_spline_gaussian <- function(FX,
         eta = Hhat,
         rho = Rhat,
         lambda = lambda_opt,
-        model_select = model_df
+        cv = cv_df
     ))
 }
 
