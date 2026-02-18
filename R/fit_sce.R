@@ -6,9 +6,9 @@
 #' likelihood.
 #'
 #' @param sce A \code{SingleCellExperiment}.
-#' @param lambda Vector of smoothing parameters. Default is
+#' @param lambda Vector of smoothing parameters to test. Default is
 #' \code{10^(seq(-5, 5, length.out = 7))}.
-#' @param K Vector of degrees of freedom. Default is \code{c(10, 50, 100)}.
+#' @param K Dimension of the spline basis matrix. Default is \code{30}.
 #' @param nfold Number of folds for cross-validation. Default is \code{5}.
 #' @param control A \code{list} of control parameters for optimization.
 #'
@@ -21,15 +21,18 @@
 #' is a list that supplies control parameters for optimization. The following
 #' parameters can be supplied:
 #' \itemize{
-#'   \item \code{max_outer} Number of outer iterations. Default is \code{1}.
-#'   \item \code{max_itr} Maximum number of inner iterations. Default is
-#'   \code{100}.
+#'   \item \code{max_itr} Maximum number of iterations. Default is \code{100}.
 #'   \item \code{history_size} History size. Default is \code{30}.
 #'   \item \code{tolerance_grad} Termination tolerance for gradient. Default is
 #'   \code{1e-7}.
 #'   \item \code{tolerance_change} Termination tolerance for log-likelihood.
 #'   Default is \code{1e-9}.
+#'   \item \code{precision}: Floating point precision for calculations. Either
+#'   \code{"float32"} or \code{"float64"}. Default is \code{"float64"}.
+#'   \item \code{boundary}: Boundary extension for spline knot boundaries.
+#'   Default is \code{0.05}.
 #' }
+#' Any control parameters not specified are replaced by their default values.
 #'
 #' @returns The same \code{SingleCellExperiment} as was passed as input, but
 #' with the metadata entry \code{dyn_corr} updated to include the following

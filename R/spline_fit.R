@@ -29,6 +29,7 @@
 #'   \item \code{boundary}: Boundary extension for spline knot boundaries.
 #'   Default is \code{0.05}.
 #' }
+#' Any control parameters not specified are replaced by their default values.
 #'
 #' @return A list with the following components:
 #' \itemize{
@@ -236,6 +237,7 @@ fit_spline_gaussian <- function(FX,
         largs <- list(X = seq_len(ncomb))
 
         progressr::with_progress({
+            # Add an extra step to reflect the final model fitting after CV
             pbar <- progressr::progressor(along = seq_len(ncomb + 1L))
 
             if (run_parallel) {

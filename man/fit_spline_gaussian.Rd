@@ -62,4 +62,5 @@ parameters can be supplied:
   \item \code{boundary}: Boundary extension for spline knot boundaries.
   Default is \code{0.05}.
 }
+Any control parameters not specified are replaced by their default values.
 }

@@ -15,10 +15,10 @@ fit_dyn_corr(
 \arguments{
 \item{sce}{A \code{SingleCellExperiment}.}
 
-\item{lambda}{Vector of smoothing parameters. Default is
+\item{lambda}{Vector of smoothing parameters to test. Default is
 \code{10^(seq(-5, 5, length.out = 7))}.}
 
-\item{K}{Vector of degrees of freedom. Default is \code{c(10, 50, 100)}.}
+\item{K}{Dimension of the spline basis matrix. Default is \code{30}.}
 
 \item{nfold}{Number of folds for cross-validation. Default is \code{5}.}
 
@@ -48,13 +48,16 @@ Optimization is performed using L-BFGS. The \code{control} argument
 is a list that supplies control parameters for optimization. The following
 parameters can be supplied:
 \itemize{
-  \item \code{max_outer} Number of outer iterations. Default is \code{1}.
-  \item \code{max_itr} Maximum number of inner iterations. Default is
-  \code{100}.
+  \item \code{max_itr} Maximum number of iterations. Default is \code{100}.
   \item \code{history_size} History size. Default is \code{30}.
   \item \code{tolerance_grad} Termination tolerance for gradient. Default is
   \code{1e-7}.
   \item \code{tolerance_change} Termination tolerance for log-likelihood.
   Default is \code{1e-9}.
+  \item \code{precision}: Floating point precision for calculations. Either
+  \code{"float32"} or \code{"float64"}. Default is \code{"float64"}.
+  \item \code{boundary}: Boundary extension for spline knot boundaries.
+  Default is \code{0.05}.
 }
+Any control parameters not specified are replaced by their default values.
 }
