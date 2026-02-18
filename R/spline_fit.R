@@ -226,29 +226,23 @@ fit_spline_gaussian <- function(FX,
             pbar <- progressr::progressor(along = seq_len(ncomb + 1L))
 
             if (run_parallel) {
-                # Additional variables to export to workers
-                future_globals <- list(
-                    lambda = lambda,
-                    fold_ids = fold_ids,
-                    combs = combs
-                )
-
-                # Packages to load on workers
-                future_packages <- c("splines")
-
                 largs <- c(largs, list(
                     future.seed = TRUE,
-                    future.globals = future_globals,
-                    future.packages = future_packages
+                    future.globals = list(
+                        lambda = lambda,
+                        fold_ids = fold_ids,
+                        combs = combs
+                    )
                 ))
             }
 
             # Model selection via cross-validation
             ll_fun <- function(i) {
+                test_mask <- (fold_ids == combs$fold[i])
                 ll <- cv_fun(
                     lam = lambda[combs$lambda_ix[i]],
-                    train_ix = which(fold_ids != combs$fold[i]),
-                    test_ix = which(fold_ids == combs$fold[i])
+                    train_ix = which(!test_mask),
+                    test_ix = which(test_mask)
                 )
                 pbar()
                 return(ll)
