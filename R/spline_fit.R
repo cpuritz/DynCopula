@@ -24,8 +24,8 @@
 #'   \code{1e-7}.
 #'   \item \code{tolerance_change} Termination tolerance for log-likelihood.
 #'   Default is \code{1e-9}.
-#'   \item \code{precision}: Floating precision. Either \code{"float32"} or
-#'   \code{"float64"}. Default is \code{"float64"}.
+#'   \item \code{precision}: Floating point precision for calculations. Either
+#'   \code{"float32"} or \code{"float64"}. Default is \code{"float64"}.
 #'   \item \code{boundary}: Boundary extension for spline knot boundaries.
 #'   Default is \code{0.05}.
 #' }
@@ -126,17 +126,62 @@ fit_spline_gaussian <- function(FX,
     # Location of Python files
     py_path <- system.file("python", package = "DynCopula")
 
+    # Since Python functions are not serializable, we can't load the
+    # optimization functions in the global environment. Instead, the functions
+    # needs to be loaded on each worker. This environment stores the
+    # Python module once it has been loaded to avoid having to do it multiple
+    # times on the same worker.
+    .fit_env <- new.env(parent = emptyenv())
+
+    fit_fun <- function(lam) {
+        # Load the module if it hasn't been loaded yet
+        if (!exists("module", envir = .fit_env, inherits = FALSE)) {
+            .fit_env$module <- reticulate::import_from_path(
+                module = "spline_gaussian",
+                path = py_path,
+                delay_load = FALSE
+            )
+        }
+        # Everything but lam already exported to workers
+        .fit_env$module$fit_gaussian_spline(
+            NX = NX,
+            B = B,
+            lam = lam,
+            control = control
+        )
+    }
+
+    cv_fun <- function(lam, train_ix, test_ix) {
+        # Load the module if it hasn't been loaded yet
+        if (!exists("module", envir = .fit_env, inherits = FALSE)) {
+            .fit_env$module <- reticulate::import_from_path(
+                module = "spline_gaussian",
+                path = py_path,
+                delay_load = FALSE
+            )
+        }
+        # NX, B, control already exported to workers
+        .fit_env$module$gaussian_spline_cv(
+            NX = NX,
+            B = B,
+            lam = lam,
+            control = control,
+            train_ix = train_ix,
+            test_ix = test_ix
+        )
+    }
+
     if (!run_parallel) {
         # Force Python initialization
         reticulate::py_config()
     } else {
         # Create cluster
         cl <- parallel::makeCluster(cores)
-        # These variables never change, so export them now to avoid having to
-        # pass them as arguments to fit_fun.
+        # These variables never change and will be needed for all Python
+        # function calls, so we'll export them now.
         parallel::clusterExport(
             cl = cl,
-            varlist = c("control", "py_path"),
+            varlist = c("NX", "B", "control", "py_path", ".fit_env"),
             envir = environment()
         )
         # Initialize cluster
@@ -162,49 +207,7 @@ fit_spline_gaussian <- function(FX,
         }, add = TRUE)
     }
 
-    # Since Python functions are not serializable, we can't load the
-    # optimization functions in the global environment. Instead, the functions
-    # needs to be loaded on each worker. This environment stores the
-    # Python module once it has been loaded to avoid having to do it multiple
-    # times on the same worker.
-    .fit_env <- new.env(parent = emptyenv())
-    fit_fun <- function(NX, B, lam) {
-        # Load the module if it hasn't been loaded yet
-        if (!exists("module", envir = .fit_env, inherits = FALSE)) {
-            .fit_env$module <- reticulate::import_from_path(
-                module = "spline_gaussian",
-                path = py_path,
-                delay_load = FALSE
-            )
-        }
-        .fit_env$module$fit_gaussian_spline(
-            NX = NX,
-            B = B,
-            lam = lam,
-            control = control       # already exported to workers
-        )
-    }
-
     if (run_cv) {
-        cv_fun <- function(NX, B, lam, train_ix, test_ix) {
-            # Load the module if it hasn't been loaded yet
-            if (!exists("module", envir = .fit_env, inherits = FALSE)) {
-                .fit_env$module <- reticulate::import_from_path(
-                    module = "spline_gaussian",
-                    path = py_path,
-                    delay_load = FALSE
-                )
-            }
-            .fit_env$module$gaussian_spline_cv(
-                NX = NX,
-                B = B,
-                lam = lam,
-                control = control,      # already exported to workers
-                train_ix = train_ix,
-                test_ix = test_ix
-            )
-        }
-
         # N-fold cross validation with equal-sized contiguous blocks
         nfold <- as.integer(nfold)
         fold_ids <- cut(seq_along(x), breaks = nfold, labels = FALSE)
@@ -223,14 +226,11 @@ fit_spline_gaussian <- function(FX,
             pbar <- progressr::progressor(along = seq_len(ncomb + 1L))
 
             if (run_parallel) {
-                # Variables to export to workers
+                # Additional variables to export to workers
                 future_globals <- list(
-                    NX = NX,
                     lambda = lambda,
-                    B = B,
                     fold_ids = fold_ids,
-                    combs = combs,
-                    .fit_env = .fit_env
+                    combs = combs
                 )
 
                 # Packages to load on workers
@@ -246,8 +246,6 @@ fit_spline_gaussian <- function(FX,
             # Model selection via cross-validation
             ll_fun <- function(i) {
                 ll <- cv_fun(
-                    NX = NX,
-                    B = B,
                     lam = lambda[combs$lambda_ix[i]],
                     train_ix = which(fold_ids != combs$fold[i]),
                     test_ix = which(fold_ids == combs$fold[i])
@@ -279,11 +277,7 @@ fit_spline_gaussian <- function(FX,
     }
 
     # Fit model using the optimal smoothing parameter
-    beta_hat <- fit_fun(
-        NX = NX,
-        B = B,
-        lam = lambda_opt
-    )
+    beta_hat <- fit_fun(lambda_opt)
 
     # Matrix of estimated calibration coefficients
     Hhat <- B %*% beta_hat

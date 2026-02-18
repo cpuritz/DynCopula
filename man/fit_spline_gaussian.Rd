@@ -57,8 +57,8 @@ parameters can be supplied:
   \code{1e-7}.
   \item \code{tolerance_change} Termination tolerance for log-likelihood.
   Default is \code{1e-9}.
-  \item \code{precision}: Floating precision. Either \code{"float32"} or
-  \code{"float64"}. Default is \code{"float64"}.
+  \item \code{precision}: Floating point precision for calculations. Either
+  \code{"float32"} or \code{"float64"}. Default is \code{"float64"}.
   \item \code{boundary}: Boundary extension for spline knot boundaries.
   Default is \code{0.05}.
 }
