@@ -131,7 +131,7 @@ def gaussian_spline_cv(
 	    dtype = torch.float64
 	    
 	K = B.shape[1]
-	d = NX.shape[1]
+	N, d = NX.shape
 	npar = d * (d - 1) // 2
 	
 	# Indices for training and testing data
