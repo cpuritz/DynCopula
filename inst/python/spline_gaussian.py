@@ -140,7 +140,7 @@ def gaussian_spline_cv(
 
 	# Set up tensors
 	NX_train = torch.tensor(NX[train_ix, :], dtype = dtype)
-	NX_test  = torch.tensor(NX[test_ix, :], dtype = dtype)
+	NX_test = torch.tensor(NX[test_ix, :], dtype = dtype)
 	B_train = torch.tensor(B[train_ix, :], dtype = dtype)
 	B_test = torch.tensor(B[test_ix, :], dtype = dtype)
 	
