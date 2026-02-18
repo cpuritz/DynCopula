@@ -152,7 +152,7 @@ fit_spline_gaussian <- function(FX,
         )
     }
 
-    cv_fun <- function(lambda_ix, train_ix, test_ix) {
+    cv_fun <- function(lambda_ix, min_test_ix, max_test_ix) {
         # Load the module if it hasn't been loaded yet
         if (!exists("module", envir = .fit_env, inherits = FALSE)) {
             .fit_env$module <- reticulate::import_from_path(
@@ -167,8 +167,8 @@ fit_spline_gaussian <- function(FX,
             B = B,
             lam = lambda[lambda_ix],
             control = control,
-            train_ix = train_ix,
-            test_ix = test_ix
+            min_test_ix = min_test_ix - 1L,  # convert to 0-indexing
+            max_test_ix = max_test_ix - 1L
         )
     }
 
@@ -246,11 +246,13 @@ fit_spline_gaussian <- function(FX,
 
             # Model selection via cross-validation
             ll_fun <- function(i) {
-                test_mask <- (fold_ids == combs$fold[i])
+                # Since the folds are contiguous blocks, we can save resources
+                # by only passing the start/end points for the testing block
+                test_ix <- which(fold_ids == i)
                 ll <- cv_fun(
                     lambda_ix = combs$lambda_ix[i],
-                    train_ix = which(!test_mask),
-                    test_ix = which(test_mask)
+                    min_test_ix = min(test_ix),
+                    max_test_ix = max(test_ix)
                 )
                 pbar()
                 return(ll)

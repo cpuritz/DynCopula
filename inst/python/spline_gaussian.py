@@ -11,7 +11,7 @@ def fit_gaussian_spline(
 	B: np.ndarray,
     lam: float,
     control: Mapping[str, Union[float, int]]
-) -> Mapping[str, Union[np.ndarray, float]]:
+) -> np.ndarray:
 	"""
 	Fit a dynamic Gaussian copula model using smooth splines.
 	
@@ -91,27 +91,27 @@ def gaussian_spline_cv(
 	B: np.ndarray,
     lam: float,
     control: Mapping[str, Union[float, int]],
-    train_ix: list,
-    test_ix: list,
-) -> Mapping[str, Union[np.ndarray, float]]:
+    min_test_ix: int,
+    max_test_ix: int
+) -> float:
 	"""
 	Fit a dynamic Gaussian copula model using smooth splines.
 	
 	Parameters
 	----------
 	NX : np.ndarray
-		Normal-transformed pseudo-observations. Shape `(n, d)`. Rows
+		Normal-transformed pseudo-observations. Shape `(N, d)`. Rows
 		correspond to `x`.
 	B : np.ndarray
-        Basis matrix. Shape `(n, K)`.
+        Basis matrix. Shape `(N, K)`.
 	lam : float
 	    Smoothing parameter.
 	control :  Mapping[str, Union[float, int]]
 		Optimization control parameters.
-	train_ix : list
-	    Indices for training data.
-	test_ix : list
-	    Indices for testing data.
+	min_test_ix : int
+	    Minimum index for testing data.
+	max_test_ix : int
+	    Maximum index for testing data
 	
 	Returns
 	-------
@@ -134,9 +134,11 @@ def gaussian_spline_cv(
 	d = NX.shape[1]
 	npar = d * (d - 1) // 2
 	
-	# 0-indexing
-	train_ix = (np.array(train_ix) - 1).astype(int)
-	test_ix = (np.array(test_ix) - 1).astype(int)
+	# Indices for training and testing data
+	test_ix = np.arange(min_test_ix, max_test_ix + 1).astype(int)
+	train_mask = np.ones(N, dtype = bool)
+	train_mask[test_ix] = False
+	train_ix = np.arange(N)[train_mask]
 
 	# Set up tensors
 	NX_train = torch.tensor(NX[train_ix, :], dtype = dtype)
