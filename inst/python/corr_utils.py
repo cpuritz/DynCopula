@@ -5,7 +5,7 @@ from functools import lru_cache
 ###############################################################################
 
 def _log_mvn_density(
-    x: torch.Tensor,
+    X: torch.Tensor,
     V: torch.Tensor,
     dtype: torch.dtype
 ) -> torch.Tensor:
@@ -14,7 +14,7 @@ def _log_mvn_density(
 
  	Parameters
 	----------
-	x : torch.Tensor
+	X : torch.Tensor
         Input samples of shape `(N, d)`, where `d` is the dimensionality.
     V : torch.Tensor
         Either of shape `(npar,)` or `(npar, N)`. In the former case, one
@@ -30,66 +30,23 @@ def _log_mvn_density(
 		The log-density of each sample under the parameterized multivariate
 		Gaussian.
 	"""
-
-	d = x.shape[-1]
+	
+	d = X.shape[-1]
 	
 	# Convert the unconstrained parameter vector to a Cholesky factor
 	L = _vec2chol(V, dtype)
 	
-	# Compute m = L^(-1) x
-	m = torch.linalg.solve_triangular(L, x.unsqueeze(-1), upper = False)
+	# Compute m = L^(-1) X
+	m = torch.linalg.solve_triangular(L, X.unsqueeze(-1), upper = False)
 	
-	# Mahalanobis distance between x and the Gaussian copula specified by L
+	# Mahalanobis distance between X and the Gaussian copula specified by L
 	M = (m * m).sum(dim = -2).squeeze(-1)
 
-	# Compute 0.5*log|R| for R=LL^T
+	# Compute 0.5 * log(det(LL^T))
 	diag = L.diagonal(dim1 = -2, dim2 = -1)
 	half_log_det = diag.clamp_min(torch.finfo(dtype).eps).log().sum(-1)
 
-	log2pi = x.new_tensor(2.0 * math.pi).log()
-	return -0.5 * (d * log2pi + M) - half_log_det
-
-###############################################################################
-
-def _gaussian_cop_loglik(
-    x: torch.Tensor,
-    V: torch.Tensor,
-    dtype: torch.dtype
-) -> torch.Tensor:
-	"""
-	Compute the log-density of a multivariate Gaussian copula.
-
- 	Parameters
-	----------
-	x : torch.Tensor
-        Input samples of shape `(N, d)`, where `d` is the dimensionality.
-    V : torch.Tensor
-        Either of shape `(npar,)` or `(npar, N)`. In the former case, one
-        covariance matrix is constructed for all samples. In the latter case,
-        one covariance matrix is constructed for each sample. `npar` must equal
-        `choose(d, 2)`.
-    dtype : torch.dtype
-        Floating-point precision.
-
-	Returns
-	-------
-	torch.Tensor
-		The total log-density over all samples under the parameterized
-		multivariate Gaussian copula.
-	"""
-	# Copula log-likelihood
-	copula_ll = _log_mvn_density(
-	    x = x,
-	    V = V,
-	    dtype = dtype
-	)
-	
-	# Marginal log-likelihood
-	log2pi = x.new_tensor(2.0 * math.pi).log()
-	margin_ll = (-0.5 * (x * x + log2pi)).sum(dim = 1)
-
-	# Sum over rows
-	return (copula_ll - margin_ll).sum()
+	return -0.5 * (d * math.log(2 * math.pi) + M) - half_log_det
 
 ###############################################################################
 
@@ -103,31 +60,27 @@ def _vec2chol(
     Parameters
     ----------
     V : torch.Tensor
-        Either of shape `(npar,)` or `(npar, N)`.
+        Shape `(N, d(d-1)/2)`.
     dtype : torch.dtype
         Floating-point precision.
 
     Returns
     -------
     torch.Tensor
-        If V was 1D, then a 2D tensor of shape `(d, d)` representing a Cholesky
-        factor. Otherwise, a 3D tensor of shape `(N, d, d)`, which each batch
-        representing a separate Cholesky factor.
+        A tensor of shape `(N, d, d)`, which each batch representing a separate
+        Cholesky factor.
     """
 
-    # Add batch dimension
-    if V.ndim == 1:
-        V = V.unsqueeze(-1)
-    npar, nbatch = V.shape
+    N, npar = V.shape
 
     d = (1 + math.isqrt(1 + 8 * npar)) // 2
-    r, c, mask = _tril_col_major(d)
+    rows, cols, mask = _tril_col_major(d)
 
     # Base identity stacked for batch
-    H = torch.eye(d, dtype = dtype).expand(nbatch, d, d).clone()
+    H = torch.eye(d, dtype = dtype).expand(N, d, d).clone()
 
     # Fill strictly lower triangular entries
-    H[:, r, c] = torch.tanh(0.5 * V.T)
+    H[:, rows, cols] = torch.tanh(0.5 * V)
 
     # Compute cumulative product term
     X = H[:, :, :-1].pow(2).clamp_max(1 - torch.finfo(dtype).eps)
@@ -135,12 +88,9 @@ def _vec2chol(
     sqrtcprod = torch.exp(0.5 * torch.cumsum(logS, dim = 2))
 
     # Build Cholesky factor
-    L = torch.zeros((nbatch, d, d), dtype = dtype)
+    L = torch.zeros((N, d, d), dtype = dtype)
     L[:, :, 0] = H[:, :, 0]
     L[:, :, 1:] = H[:, :, 1:] * sqrtcprod
-
-    # If initially unbatched, remove batch dimension
-    L = L.squeeze(0)
 
     return L
 
@@ -164,7 +114,9 @@ def _tril_col_major(d: int):
     mask : torch.Tensor
         Boolean mask where `mask[i, j]` is True if `j < i`.
     """
+    
     rows, cols = torch.tril_indices(d, d, offset = -1)
+    
     # Convert from row-major order to column-major order
     order = torch.argsort(cols * d + rows)
     rows = rows[order]

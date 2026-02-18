@@ -2,7 +2,7 @@ import torch
 import math
 import numpy as np
 from typing import Mapping, Union
-from corr_utils import _log_mvn_density, _gaussian_cop_loglik
+from corr_utils import _log_mvn_density
 
 ###############################################################################
 
@@ -32,7 +32,7 @@ def fit_gaussian_spline(
 	beta : np.ndarray
 		Estimated spline coefficients. Shape `(K, p)`.
 	"""
-
+	
 	max_iter = int(control["max_itr"])
 	history_size = int(control["history_size"])
 	tolerance_grad = float(control["tolerance_grad"])
@@ -118,7 +118,7 @@ def gaussian_spline_cv(
 	ll : float
 	    Cross-validated log-likelihood.
 	"""
-
+	
 	max_iter = int(control["max_itr"])
 	history_size = int(control["history_size"])
 	tolerance_grad = float(control["tolerance_grad"])
@@ -180,13 +180,9 @@ def gaussian_spline_cv(
 	H_test = B_test @ beta_hat
 	
 	# Marginal log-likelihood
-	margin_ll = (-0.5 * (math.log(2 * math.pi) + NX_test**2)).sum(dim = 1)
+	margin_ll = (-0.5 * (math.log(2 * math.pi) + NX_test * NX_test)).sum(dim = 1)
 	# Copula log-likelihood
-	copula_ll = _gaussian_cop_loglik(
-		x = NX_test,
-		V = H_test.T.contiguous(),
-		dtype = dtype
-	)
+	copula_ll = _log_mvn_density(NX_test, H_test, dtype)
 	# Average model log-likelihood
 	ll = torch.sum(copula_ll - margin_ll) / margin_ll.shape[0]
 	
@@ -225,16 +221,12 @@ def _spline_loss(
 	torch.Tensor
 		A scalar tensor representing the spline loss.
 	"""
-
+	
 	# Parameter estimates
 	eta = B @ beta
 	
 	# Negative log likelihood
-	nll = -torch.sum(_log_mvn_density(
-	    x = NX,
-	    V = eta.T.contiguous(),
-	    dtype = dtype
-	))
+	nll = -torch.sum(_log_mvn_density(NX, eta, dtype))
 	
 	# Penalty term = lambda/2 * trace(beta.T * S * beta)
 	pen = 0.5 * lam * (beta * (S @ beta)).sum()
@@ -262,6 +254,7 @@ def pen_mat(K: int, dtype: torch.dtype) -> torch.Tensor:
 	torch.Tensor
 		A tensor representing the penalty matrix.
 	"""
+	
 	K = int(K)
 	I = torch.eye(K, dtype = dtype)
 	D2 = I[:-2] - 2 * I[1:-1] + I[2:]
