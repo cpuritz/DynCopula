@@ -151,7 +151,7 @@ fit_spline_gaussian <- function(FX,
         )
     }
 
-    cv_fun <- function(lam, train_ix, test_ix) {
+    cv_fun <- function(lambda_ix, train_ix, test_ix) {
         # Load the module if it hasn't been loaded yet
         if (!exists("module", envir = .fit_env, inherits = FALSE)) {
             .fit_env$module <- reticulate::import_from_path(
@@ -164,11 +164,23 @@ fit_spline_gaussian <- function(FX,
         .fit_env$module$gaussian_spline_cv(
             NX = NX,
             B = B,
-            lam = lam,
+            lam = lambda[lambda_ix],
             control = control,
             train_ix = train_ix,
             test_ix = test_ix
         )
+    }
+
+    if (run_cv) {
+        # N-fold cross validation with equal-sized contiguous blocks
+        nfold <- as.integer(nfold)
+        fold_ids <- cut(seq_along(x), breaks = nfold, labels = FALSE)
+        # All combinations of smoothing parameter and test fold ID
+        combs <- expand.grid(
+            lambda_ix = seq_along(lambda),
+            fold = seq_len(nfold)
+        )
+        ncomb <- dim(combs)[1]
     }
 
     if (!run_parallel) {
@@ -181,7 +193,8 @@ fit_spline_gaussian <- function(FX,
         # function calls, so we'll export them now.
         parallel::clusterExport(
             cl = cl,
-            varlist = c("NX", "B", "control", "py_path", ".fit_env"),
+            varlist = c("NX", "B", "lambda", "fold_ids", "combs", "control",
+                        "py_path", ".fit_env"),
             envir = environment()
         )
         # Initialize cluster
@@ -226,21 +239,14 @@ fit_spline_gaussian <- function(FX,
             pbar <- progressr::progressor(along = seq_len(ncomb + 1L))
 
             if (run_parallel) {
-                largs <- c(largs, list(
-                    future.seed = TRUE,
-                    future.globals = list(
-                        lambda = lambda,
-                        fold_ids = fold_ids,
-                        combs = combs
-                    )
-                ))
+                largs <- c(largs, list(future.seed = TRUE))
             }
 
             # Model selection via cross-validation
             ll_fun <- function(i) {
                 test_mask <- (fold_ids == combs$fold[i])
                 ll <- cv_fun(
-                    lam = lambda[combs$lambda_ix[i]],
+                    lambda_ix = combs$lambda_ix[i],
                     train_ix = which(!test_mask),
                     test_ix = which(test_mask)
                 )
