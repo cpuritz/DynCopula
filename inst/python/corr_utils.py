@@ -41,15 +41,11 @@ def _log_mvn_density(
 	
 	# Mahalanobis distance between X and the Gaussian copula specified by L
 	M = (m * m).sum(dim = -2).squeeze(-1)
-	print("min M:", M.min().item())
-	print("max M:", M.max().item())
 
 	# Compute 0.5 * log(det(LL^T))
 	diag = L.diagonal(dim1 = -2, dim2 = -1)
 	half_log_det = diag.clamp_min(torch.finfo(dtype).eps).log().sum(-1)
-	print("min half_log_det:", half_log_det.min().item())
-	print("max half_log_det:", half_log_det.max().item())
-
+	
 	return -0.5 * (d * math.log(2 * math.pi) + M) - half_log_det
 
 ###############################################################################
@@ -88,13 +84,10 @@ def _vec2chol(
 
     # Compute cumulative product term
     X = H[:, :, :-1].pow(2).clamp_max(1 - torch.finfo(dtype).eps)
-    logS = torch.log1p(-X) * mask[:, :-1]
-    print("logS min:", logS.min().item())
-    print("logS max:", logS.max().item())
-    sqrtcprod = torch.exp(0.5 * torch.cumsum(logS, dim = 2))
-    print("sqrtcprod min:", sqrtcprod.min().item())
-    print("sqrtcprod max:", sqrtcprod.max().item())
-
+    csum = torch.cumsum(torch.log1p(-X) * mask[:, :-1], dim = 2)
+    # Clamp min sqrtcprod at 1e-10
+    sqrtcprod = torch.exp(0.5 * csum.clamp_min(math.log(1e-20)))
+    
     # Build Cholesky factor
     L = torch.zeros((N, d, d), dtype = dtype)
     L[:, :, 0] = H[:, :, 0]
