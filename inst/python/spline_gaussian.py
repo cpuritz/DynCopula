@@ -180,10 +180,17 @@ def gaussian_spline_cv(
         
 		loss.backward()
 		
-		for n, p in model.named_parameters():
-			if p.grad is not None and not torch.isfinite(p.grad).all():
-				raise RuntimeError(f"Non-finite grad in {n}: min={p.grad.min().item()} max={p.grad.max().item()}")
-
+		if not torch.isfinite(beta.grad).all():
+		    g = beta.grad
+		    bad = (~torch.isfinite(g)).nonzero(as_tuple=False)[:10]
+		    raise RuntimeError(
+		        "Non-finite grad in beta. "
+		        f"shape={tuple(g.shape)} "
+		        f"min={g[torch.isfinite(g)].min().item() if torch.isfinite(g).any() else float('nan')} "
+		        f"max={g[torch.isfinite(g)].max().item() if torch.isfinite(g).any() else float('nan')} "
+		        f"bad_idx(first10)={bad.tolist()}"
+            )
+    
 		return loss
     
 	loss = optimizer.step(closure)
