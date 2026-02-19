@@ -221,7 +221,7 @@ fit_spline_gaussian <- function(FX,
         }, add = TRUE)
     }
 
-    if (run_cv) {
+    if (TRUE) {
         # Avoid setting up futures if no parallelization is requested
         lfun <- ifelse(run_parallel, future.apply::future_lapply, lapply)
         largs <- list(X = seq_len(ncomb))
@@ -248,6 +248,7 @@ fit_spline_gaussian <- function(FX,
                 return(ll)
             }
             cv <- do.call(what = lfun, args = c(largs, list(FUN = ll_fun)))
+            print(cbind(combs, cv))
 
             # Sum likelihoods across folds
             ll_sum <- tapply(
