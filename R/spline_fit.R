@@ -182,6 +182,10 @@ fit_spline_gaussian <- function(FX,
             fold = seq_len(nfold)
         )
         ncomb <- dim(combs)[1]
+        if (ncomb > cores) {
+            message("NOTE: ", cores, " core(s) have been requested, but there ",
+                "are only ", ncomb, " tasks to run.")
+        }
     }
 
     if (!run_parallel) {
