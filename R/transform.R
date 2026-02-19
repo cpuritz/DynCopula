@@ -48,7 +48,6 @@ cor2vec <- function(R) {
 #' @export
 vec2cor <- function(v) {
     scale <- 0.5
-    rho_max <- 0.99
 
     d <- as.integer((1 + sqrt(1 + 8 * length(v))) / 2)
 
@@ -64,13 +63,6 @@ vec2cor <- function(v) {
 
     # Compute correlation matrix
     R <- tcrossprod(H, H)
-
-    # Cap magnitude of correlations to rho_max
-    max_R <- max(abs(copula::P2p(R)))
-    if (max_R > rho_max) {
-        alpha <- rho_max / max_R
-        R <- alpha * R + (1 - alpha) * diag(dim(R)[1])
-    }
 
     return(R)
 }
