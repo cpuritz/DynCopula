@@ -188,7 +188,7 @@ def gaussian_spline_cv(
 		loss = optimizer.step(closure)
 		beta_hat = beta.detach()
 	except RuntimeError:
-	    print("Something bad happened, using last good value")
+		print("Something bad happened, using last good value")
 		loss = last_good["loss"]
 		beta_hat = last_good["beta"]
 
