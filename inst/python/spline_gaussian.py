@@ -178,8 +178,12 @@ def gaussian_spline_cv(
 	loss = optimizer.step(closure)
 	beta_hat = beta.detach()
 	
+	print("Opt done")
+	print(torch.isnan(beta).any())
+	
 	# Predicted coefficients for test data
 	H_test = B_test @ beta_hat
+	print(torch.isnan(H_test).any())
 	
 	# Marginal log-likelihood
 	margin_ll = (-0.5 * (math.log(2 * math.pi) + NX_test * NX_test)).sum(dim = 1)

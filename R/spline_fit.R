@@ -248,11 +248,12 @@ fit_spline_gaussian <- function(FX,
                 return(ll)
             }
             cv <- do.call(what = lfun, args = c(largs, list(FUN = ll_fun)))
+            cv <- unlist(cv)
             print(cbind(combs, cv))
 
             # Sum likelihoods across folds
             ll_sum <- tapply(
-                X = unlist(cv),
+                X = cv,
                 INDEX = list(combs$lambda_ix),
                 FUN = sum
             )
