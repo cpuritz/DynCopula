@@ -275,23 +275,23 @@ fit_spline_gaussian <- function(FX,
 
     # Matrix of estimated calibration coefficients
     Hhat <- B %*% beta_hat
-    # Matrix of estimated correlation coefficients
-    Rhat <- t(apply(Hhat, 1, function(v) {
-        copula::P2p(vec2cor(v))
-    }))
-
-    # Ensure consistent shape of Rhat across all dimensions
-    d <- dim(FX)[2]
-    if (d == 2L) {
-        Rhat <- t(Rhat)
-    }
-
-    # Add numbered eta/rho labels
-    colnames(Hhat) <- paste0("eta", seq_len(choose(d, 2)))
-    ix_lab <- apply(utils::combn(seq_len(d), 2), 2, function(x) {
-        paste(x, collapse = '_')
-    })
-    colnames(Rhat) <- paste0("rho", ix_lab)
+    # # Matrix of estimated correlation coefficients
+    # Rhat <- t(apply(Hhat, 1, function(v) {
+    #     copula::P2p(vec2cor(v))
+    # }))
+    #
+    # # Ensure consistent shape of Rhat across all dimensions
+    # d <- dim(FX)[2]
+    # if (d == 2L) {
+    #     Rhat <- t(Rhat)
+    # }
+    #
+    # # Add numbered eta/rho labels
+    # colnames(Hhat) <- paste0("eta", seq_len(choose(d, 2)))
+    # ix_lab <- apply(utils::combn(seq_len(d), 2), 2, function(x) {
+    #     paste(x, collapse = '_')
+    # })
+    # colnames(Rhat) <- paste0("rho", ix_lab)
 
     # Rescale covariates back to their original scale
     x <- x * dx + min_x
@@ -300,7 +300,6 @@ fit_spline_gaussian <- function(FX,
         x = x,
         NX = NX,
         eta = Hhat,
-        rho = Rhat,
         lambda = lambda_opt,
         cv = cv_df
     ))
