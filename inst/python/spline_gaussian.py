@@ -162,7 +162,7 @@ def gaussian_spline_cv(
 		tolerance_change = tolerance_change
 	)
 	
-	torch.autograd.set_detect_anomaly(True)
+	last_good = {"beta": beta.detach().clone(), "loss": None}
     
 	def closure():
 		optimizer.zero_grad()
@@ -175,33 +175,25 @@ def gaussian_spline_cv(
 		    dtype = dtype
 		)
 		
-		if not torch.isfinite(loss):
-			raise RuntimeError(f"Non-finite loss: {loss.item()}")
+		if torch.isfinite(loss):
+			last_good["beta"] = beta.detach().clone()
+			last_good["loss"] = loss.detach()
+		else:
+			raise RuntimeError("Non-finite loss")
         
 		loss.backward()
-		
-		if not torch.isfinite(beta.grad).all():
-		    g = beta.grad
-		    bad = (~torch.isfinite(g)).nonzero(as_tuple=False)[:10]
-		    raise RuntimeError(
-		        "Non-finite grad in beta. "
-		        f"shape={tuple(g.shape)} "
-		        f"min={g[torch.isfinite(g)].min().item() if torch.isfinite(g).any() else float('nan')} "
-		        f"max={g[torch.isfinite(g)].max().item() if torch.isfinite(g).any() else float('nan')} "
-		        f"bad_idx(first10)={bad.tolist()}"
-            )
-    
 		return loss
     
-	loss = optimizer.step(closure)
-	beta_hat = beta.detach()
-	
-	print("Opt done")
-	print(torch.isnan(beta).any())
-	
+	try:
+		loss = optimizer.step(closure)
+		beta_hat = beta.detach()
+	except RuntimeError:
+	    print("Something bad happened, using last good value")
+		loss = last_good["loss"]
+		beta_hat = last_good["beta"]
+
 	# Predicted coefficients for test data
 	H_test = B_test @ beta_hat
-	print(torch.isnan(H_test).any())
 	
 	# Marginal log-likelihood
 	margin_ll = (-0.5 * (math.log(2 * math.pi) + NX_test * NX_test)).sum(dim = 1)
