@@ -161,6 +161,8 @@ def gaussian_spline_cv(
 		tolerance_grad = tolerance_grad,
 		tolerance_change = tolerance_change
 	)
+	
+	torch.autograd.set_detect_anomaly(True)
     
 	def closure():
 		optimizer.zero_grad()
@@ -172,7 +174,16 @@ def gaussian_spline_cv(
 		    lam = lam,
 		    dtype = dtype
 		)
+		
+		if not torch.isfinite(loss):
+			raise RuntimeError(f"Non-finite loss: {loss.item()}")
+        
 		loss.backward()
+		
+		for n, p in model.named_parameters():
+			if p.grad is not None and not torch.isfinite(p.grad).all():
+				raise RuntimeError(f"Non-finite grad in {n}: min={p.grad.min().item()} max={p.grad.max().item()}")
+
 		return loss
     
 	loss = optimizer.step(closure)

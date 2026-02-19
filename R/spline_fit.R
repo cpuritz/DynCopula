@@ -64,7 +64,7 @@ fit_spline_gaussian <- function(FX,
 
     # Whether parallelization is required
     cores <- as.integer(cores)
-    run_cv <- TRUE#(length(lambda) > 1)
+    run_cv <- (length(lambda) > 1)
     run_parallel <- (cores > 1L) && run_cv
 
     # Default control parameters
@@ -179,7 +179,7 @@ fit_spline_gaussian <- function(FX,
         # All combinations of smoothing parameter and test fold ID
         combs <- expand.grid(
             lambda_ix = seq_along(lambda),
-            fold = seq_len(nfold)
+            fold = 1#seq_len(nfold)
         )
         ncomb <- dim(combs)[1]
     }
