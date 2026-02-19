@@ -64,7 +64,7 @@ fit_spline_gaussian <- function(FX,
 
     # Whether parallelization is required
     cores <- as.integer(cores)
-    run_cv <- (length(lambda) > 1)
+    run_cv <- TRUE#(length(lambda) > 1)
     run_parallel <- (cores > 1L) && run_cv
 
     # Default control parameters
@@ -221,7 +221,7 @@ fit_spline_gaussian <- function(FX,
         }, add = TRUE)
     }
 
-    if (TRUE) {
+    if (run_cv) {
         # Avoid setting up futures if no parallelization is requested
         lfun <- ifelse(run_parallel, future.apply::future_lapply, lapply)
         largs <- list(X = seq_len(ncomb))
