@@ -222,16 +222,6 @@ fit_spline_gaussian <- function(FX,
     }
 
     if (run_cv) {
-        # N-fold cross validation with equal-sized contiguous blocks
-        nfold <- as.integer(nfold)
-        fold_ids <- cut(seq_along(x), breaks = nfold, labels = FALSE)
-        # All combinations of smoothing parameter and test fold ID
-        combs <- expand.grid(
-            lambda_ix = seq_along(lambda),
-            fold = seq_len(nfold)
-        )
-        ncomb <- dim(combs)[1]
-
         # Avoid setting up futures if no parallelization is requested
         lfun <- ifelse(run_parallel, future.apply::future_lapply, lapply)
         largs <- list(X = seq_len(ncomb))
@@ -248,7 +238,7 @@ fit_spline_gaussian <- function(FX,
             ll_fun <- function(i) {
                 # Since the folds are contiguous blocks, we can save resources
                 # by only passing the start/end points for the testing block
-                test_ix <- which(fold_ids == i)
+                test_ix <- which(fold_ids == combs$fold[i])
                 ll <- cv_fun(
                     lambda_ix = combs$lambda_ix[i],
                     min_test_ix = min(test_ix),

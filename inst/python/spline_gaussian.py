@@ -134,15 +134,11 @@ def gaussian_spline_cv(
 	N, d = NX.shape
 	npar = d * (d - 1) // 2
 	
-	print("a")
-	
 	# Indices for training and testing data
 	test_ix = np.arange(min_test_ix, max_test_ix + 1).astype(int)
 	train_mask = np.ones(N, dtype = bool)
 	train_mask[test_ix] = False
 	train_ix = np.arange(N)[train_mask]
-	
-	print("b")
 
 	# Set up tensors
 	NX_train = torch.tensor(NX[train_ix, :], dtype = dtype)
@@ -152,8 +148,6 @@ def gaussian_spline_cv(
 	
 	# Set initial coefficients all to zero
 	beta = torch.zeros(K, npar, dtype = dtype, requires_grad = True)
-	
-	print("c")
 
 	# Precompute fixed penalty matrix
 	S = pen_mat(K = B.shape[1], dtype = dtype)
@@ -167,8 +161,6 @@ def gaussian_spline_cv(
 		tolerance_grad = tolerance_grad,
 		tolerance_change = tolerance_change
 	)
-	
-	print("d")
     
 	def closure():
 		optimizer.zero_grad()
@@ -189,17 +181,12 @@ def gaussian_spline_cv(
 	# Predicted coefficients for test data
 	H_test = B_test @ beta_hat
 	
-	print("e")
-	
 	# Marginal log-likelihood
 	margin_ll = (-0.5 * (math.log(2 * math.pi) + NX_test * NX_test)).sum(dim = 1)
-	print("f")
 	# Copula log-likelihood
 	copula_ll = _log_mvn_density(NX_test, H_test, dtype)
-	print("g")
 	# Average model log-likelihood
 	ll = torch.sum(copula_ll - margin_ll) / margin_ll.shape[0]
-	print("h")
 	
 	return ll.numpy()
     
