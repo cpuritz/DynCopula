@@ -179,7 +179,7 @@ fit_spline_gaussian <- function(FX,
         # All combinations of smoothing parameter and test fold ID
         combs <- expand.grid(
             lambda_ix = seq_along(lambda),
-            fold = 1#seq_len(nfold)
+            fold = seq_len(nfold)
         )
         ncomb <- dim(combs)[1]
     }
