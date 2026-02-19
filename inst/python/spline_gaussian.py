@@ -243,9 +243,11 @@ def _spline_loss(
 	
 	# Negative log likelihood
 	nll = -torch.sum(_log_mvn_density(NX, eta, dtype))
+	print("nll:", nll.item())
 	
 	# Penalty term = lambda/2 * trace(beta.T * S * beta)
 	pen = 0.5 * lam * (beta * (S @ beta)).sum()
+	print("pen:", pen.item())
 	
 	# Spline loss
 	loss = nll + pen

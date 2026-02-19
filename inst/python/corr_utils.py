@@ -41,10 +41,14 @@ def _log_mvn_density(
 	
 	# Mahalanobis distance between X and the Gaussian copula specified by L
 	M = (m * m).sum(dim = -2).squeeze(-1)
+	print("min M:", M.min().item())
+	print("max M:", M.max().item())
 
 	# Compute 0.5 * log(det(LL^T))
 	diag = L.diagonal(dim1 = -2, dim2 = -1)
 	half_log_det = diag.clamp_min(torch.finfo(dtype).eps).log().sum(-1)
+	print("min half_log_det:", half_log_det.min().item())
+	print("max half_log_det:", half_log_det.max().item())
 
 	return -0.5 * (d * math.log(2 * math.pi) + M) - half_log_det
 
@@ -88,6 +92,8 @@ def _vec2chol(
     print("logS min:", logS.min().item())
     print("logS max:", logS.max().item())
     sqrtcprod = torch.exp(0.5 * torch.cumsum(logS, dim = 2))
+    print("sqrtcprod min:", sqrtcprod.min().item())
+    print("sqrtcprod max:", sqrtcprod.max().item())
 
     # Build Cholesky factor
     L = torch.zeros((N, d, d), dtype = dtype)
