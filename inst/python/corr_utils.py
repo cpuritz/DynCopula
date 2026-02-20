@@ -38,21 +38,13 @@ def _log_mvn_density(
 	
 	# Compute m = L^(-1) X
 	m = torch.linalg.solve_triangular(L, X.unsqueeze(-1), upper = False)
-	print("min m:", m.min().item())
-	print("max m:", m.max().item())
-	
+
 	# Mahalanobis distance between X and the Gaussian copula specified by L
 	M = (m * m).sum(dim = -2).squeeze(-1)
-	print("min M:", M.min().item())
-	print("max M:", M.max().item())
-
+	
 	# Compute 0.5 * log(det(LL^T))
 	diag = L.diagonal(dim1 = -2, dim2 = -1)
-	print("min diag:", diag.min().item())
-	print("max diag:", diag.max().item())
 	half_log_det = diag.clamp_min(torch.finfo(dtype).eps).log().sum(-1)
-	print("min hld:", half_log_det.min().item())
-	print("max hld:", half_log_det.max().item())
 	
 	return -0.5 * (d * math.log(2 * math.pi) + M) - half_log_det
 
