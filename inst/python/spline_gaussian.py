@@ -174,6 +174,8 @@ def gaussian_spline_cv(
 		    lam = lam,
 		    dtype = dtype
 		)
+		print("loss:", loss.item())
+		print("")
 		
 		if torch.isfinite(loss):
 			last_good["beta"] = beta.detach().clone()
