@@ -86,7 +86,7 @@ def _vec2chol(
     # Compute cumulative product term
     X = H[:, :, :-1].pow(2).clamp_max(1 - torch.finfo(dtype).eps)
     csum = torch.cumsum(torch.log1p(-X) * mask[:, :-1], dim = 2)
-    # Clamp min sqrtcprod at 1e-10
+    # Clamp minimum at 1e-10
     sqrtcprod = torch.exp(0.5 * csum.clamp_min(math.log(1e-20)))
     
     # Build Cholesky factor
