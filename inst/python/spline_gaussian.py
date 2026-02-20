@@ -162,8 +162,6 @@ def gaussian_spline_cv(
 		tolerance_change = tolerance_change
 	)
 	
-	last_good = {"beta": beta.detach().clone(), "loss": None}
-    
 	def closure():
 		optimizer.zero_grad()
 		loss = _spline_loss(
@@ -174,14 +172,6 @@ def gaussian_spline_cv(
 		    lam = lam,
 		    dtype = dtype
 		)
-		print("loss:", loss.item())
-		
-		if torch.isfinite(loss):
-			last_good["beta"] = beta.detach().clone()
-			last_good["loss"] = loss.detach()
-		else:
-			raise RuntimeError("Non-finite loss")
-        
 		loss.backward()
 		return loss
     
@@ -189,9 +179,8 @@ def gaussian_spline_cv(
 		loss = optimizer.step(closure)
 		beta_hat = beta.detach()
 	except RuntimeError:
-		print("Something bad happened, using last good value")
-		loss = last_good["loss"]
-		beta_hat = last_good["beta"]
+		print("Something bad happened, returning large negative ll")
+		return -1e10
 
 	# Predicted coefficients for test data
 	H_test = B_test @ beta_hat

@@ -34,7 +34,7 @@ def _log_mvn_density(
 	d = X.shape[-1]
 	
 	# Convert the unconstrained parameter vector to a Cholesky factor
-	L = _vec2chol(V, dtype)
+	L = _vec2chol(V, d, dtype)
 	
 	# Compute m = L^(-1) X
 	m = torch.linalg.solve_triangular(L, X.unsqueeze(-1), upper = False)
@@ -52,6 +52,7 @@ def _log_mvn_density(
 
 def _vec2chol(
     V: torch.Tensor,
+    d: int,
     dtype: torch.dtype
 ) -> torch.Tensor:
     """
@@ -61,6 +62,8 @@ def _vec2chol(
     ----------
     V : torch.Tensor
         Shape `(N, d(d-1)/2)`.
+    d : int
+        Dimension.
     dtype : torch.dtype
         Floating-point precision.
 
@@ -72,8 +75,6 @@ def _vec2chol(
     """
 
     N, npar = V.shape
-
-    d = (1 + math.isqrt(1 + 8 * npar)) // 2
     rows, cols, mask = _tril_col_major(d)
 
     # Base identity stacked for batch
