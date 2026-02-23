@@ -179,7 +179,7 @@ def gaussian_spline_cv(
 		loss = optimizer.step(closure)
 		beta_hat = beta.detach()
 	except RuntimeError:
-		print("Something bad happened, returning large negative ll")
+	    # Something went wrong, fall back to ~ -inf log-likelihood
 		return -1e10
 
 	# Predicted coefficients for test data
