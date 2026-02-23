@@ -253,7 +253,6 @@ fit_spline_gaussian <- function(FX,
             }
             cv <- do.call(what = lfun, args = c(largs, list(FUN = ll_fun)))
             cv <- unlist(cv)
-            print(cbind(combs, cv))
 
             # Sum likelihoods across folds
             ll_sum <- tapply(
