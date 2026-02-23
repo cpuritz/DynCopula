@@ -56,7 +56,7 @@ fit_spline_gaussian <- function(FX,
         !anyDuplicated(x),
         dim(FX)[1] == length(x),
         is.vector(lambda, mode = "numeric") && all(lambda > 0),
-        is.numeric(K) && K > 1,
+        is.numeric(K) && K >= 3,
         is.numeric(nfold) && nfold >= 2,
         is.numeric(cores) && cores >= 1,
         is.list(control)
@@ -183,7 +183,7 @@ fit_spline_gaussian <- function(FX,
         )
         ncomb <- dim(combs)[1]
         if (ncomb < cores) {
-            message("NOTE: ", cores, " core(s) have been requested, but there ",
+            message("NOTE: ", cores, " cores have been requested, but there ",
                 "are only ", ncomb, " tasks to run.")
         }
     }
@@ -310,5 +310,6 @@ fit_spline_gaussian <- function(FX,
         cv = cv_df
     ))
 }
+
 
 ###############################################################################

@@ -4,52 +4,6 @@ from functools import lru_cache
 
 ###############################################################################
 
-def _log_mvn_density(
-    X: torch.Tensor,
-    V: torch.Tensor,
-    dtype: torch.dtype
-) -> torch.Tensor:
-	"""
-	Compute the log-density of a multivariate Gaussian distribution.
-
- 	Parameters
-	----------
-	X : torch.Tensor
-        Input samples of shape `(N, d)`, where `d` is the dimensionality.
-    V : torch.Tensor
-        Either of shape `(npar,)` or `(npar, N)`. In the former case, one
-        covariance matrix is constructed for all samples. In the latter case,
-        one covariance matrix is constructed for each sample. `npar` must equal
-        `choose(d, 2)`.
-    dtype : torch.dtype
-        Floating-point precision.
-
-	Returns
-	-------
-	torch.Tensor
-		The log-density of each sample under the parameterized multivariate
-		Gaussian.
-	"""
-	
-	d = X.shape[-1]
-	
-	# Convert the unconstrained parameter vector to a Cholesky factor
-	L = _vec2chol(V, d, dtype)
-	
-	# Compute m = L^(-1) X
-	m = torch.linalg.solve_triangular(L, X.unsqueeze(-1), upper = False)
-
-	# Mahalanobis distance between X and the Gaussian copula specified by L
-	M = (m * m).sum(dim = -2).squeeze(-1)
-	
-	# Compute 0.5 * log(det(LL^T))
-	diag = L.diagonal(dim1 = -2, dim2 = -1)
-	half_log_det = diag.clamp_min(torch.finfo(dtype).eps).log().sum(-1)
-	
-	return -0.5 * (d * math.log(2 * math.pi) + M) - half_log_det
-
-###############################################################################
-
 def _vec2chol(
     V: torch.Tensor,
     d: int,

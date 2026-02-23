@@ -2,7 +2,7 @@ import torch
 import math
 import numpy as np
 from typing import Mapping, Union
-from corr_utils import _log_mvn_density
+from spline_loss import _log_mvn_density, _spline_loss, _pen_mat
 
 ###############################################################################
 
@@ -56,7 +56,7 @@ def fit_gaussian_spline(
 	beta = torch.zeros(K, npar, dtype = dtype, requires_grad = True)
 
 	# Precompute fixed penalty matrix
-	S = pen_mat(K = B.shape[1], dtype = dtype)
+	S = _pen_mat(K = K, dtype = dtype)
     
 	optimizer = torch.optim.LBFGS(
 		[beta],
@@ -150,7 +150,7 @@ def gaussian_spline_cv(
 	beta = torch.zeros(K, npar, dtype = dtype, requires_grad = True)
 
 	# Precompute fixed penalty matrix
-	S = pen_mat(K = B.shape[1], dtype = dtype)
+	S = _pen_mat(K = K, dtype = dtype)
     
     # Fit using training data
 	optimizer = torch.optim.LBFGS(
@@ -193,78 +193,5 @@ def gaussian_spline_cv(
 	ll = torch.sum(copula_ll - margin_ll) / margin_ll.shape[0]
 	
 	return ll.numpy()
-    
-###############################################################################
-    
-def _spline_loss(
-	beta: torch.Tensor,
-	NX: torch.tensor,
-	B: torch.Tensor,
-	S: torch.Tensor,
-	lam: float,
-	dtype: torch.dtype
-) -> torch.Tensor:
-	"""
-	Compute the spline loss for a Gaussian copula.
-	
-	Parameters
-	----------
-	beta : torch.Tensor
-        Spline coefficients. Shape `(K, p)`.
-	NX : torch.tensor
-	    Normal-transformed pseudo-observations. Shape `(n, d)`.
-	B : torch.Tensor
-	    Basis matrix. Shape `(n, K)`.
-	S : torch.Tensor
-	    Penalty matrix. Shape `(K, K)`.
-	lam : float
-	    Smoothing parameter.
-	dtype : torch.dtype
-	    Floating-point precision.
-	
-	Returns
-	-------
-	torch.Tensor
-		A scalar tensor representing the spline loss.
-	"""
-	
-	# Parameter estimates
-	eta = B @ beta
-	
-	# Negative log likelihood
-	nll = -torch.sum(_log_mvn_density(NX, eta, dtype))
-
-	# Penalty term = lambda/2 * trace(beta.T * S * beta)
-	pen = 0.5 * lam * (beta * (S @ beta)).sum()
-
-	# Spline loss
-	loss = nll + pen
-	
-	return loss
-
-###############################################################################
-
-def pen_mat(K: int, dtype: torch.dtype) -> torch.Tensor:
-	"""
-	Compute penalty matrix.
-
-	Parameters
-	----------
-	K : int
-		Degrees of freedom.
-	dtype : torch.dtype
-	    Floating point precision.
-		
-	Returns
-	-------
-	torch.Tensor
-		A tensor representing the penalty matrix.
-	"""
-	
-	K = int(K)
-	I = torch.eye(K, dtype = dtype)
-	D2 = I[:-2] - 2 * I[1:-1] + I[2:]
-	S = D2.T @ D2
-	return S
 
 ###############################################################################
