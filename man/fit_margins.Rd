@@ -4,43 +4,55 @@
 \alias{fit_margins}
 \title{Fit marginal distributions to each gene}
 \usage{
-fit_margins(sce, family = c("NBI", "ZINBI"), mu_formula, sigma_formula)
+fit_margins(
+  sce,
+  quick = TRUE,
+  family = c("NBI", "ZINBI"),
+  mu_formula,
+  sigma_formula
+)
 }
 \arguments{
 \item{sce}{A \code{SingleCellExperiment}.}
 
-\item{family}{A character vector specifying families to use. Options are
-\code{"NBI"} (negative binomial) and \code{"ZINBI"}
-(zero-inflated negative binomial).}
+\item{quick}{Whether to perform cross-validated bandwidth selection (which is
+expensive but more accurate) or use a quick plug-in estimator. Only used if
+\code{assay = "logcounts"}. Default is \code{TRUE}.}
+
+\item{family}{A character vector specifying families to use. Only used
+if \code{assay = "counts"}. Options are \code{"NBI"} (negative binomial) and
+\code{"ZINBI"} (zero-inflated negative binomial).}
 
 \item{mu_formula}{A character vector specifying formulas for the mean
-parameter.}
+parameter. Only used if \code{assay = "counts"}.}
 
 \item{sigma_formula}{A character vector specifying formulas for the
-dispersion parameter.}
+dispersion parameter. Only used if \code{assay = "counts"}.}
 }
 \value{
 The same \code{SingleCellExperiment} as was passed as input, but
-with the metadata entry \code{dyn_corr} updated to include the following
-entries:
-\itemize{
-  \item \code{margins} List of marginal models.
-  \item \code{FX} Matrix of pseudo-observations.
-  \item \code{FXm} Matrix of left limits of pseudo-observations.
-  \item \code{V} Jittering matrix.
-}
+with the metadata entry \code{dyn_corr} updated to include necessary
+information about the margins.
 }
 \description{
-Fit parametric models to transcript counts for each gene.
+Fit marginal distributions to transcript counts for each gene.
+If the assay to model is \code{"counts"}, parametric models are fit. If the
+assay to model is \code{"logcounts"}, nonparametric models are fit.
 }
 \details{
-Multiple families and formulas can be passed, in which case the best
-fitting model is chosen across all combinations by minimizing AIC.
+If \code{assay = "logcounts"}, kernel-smoothed hurdle models are
+fit. The only modeling decision to make is whether to perform cross-validated
+bandwidth selection for the margins. This approach is more accurate than
+using the plug-in bandwidth selector, but is much more expensive. See the
+\code{bwmethod} argument of \link[np]{npcdistbw} for details.
 
-Formulas should be written as a function of the name of the
-pseudotime column (what was passed as the argument \code{time_col} to
-\link[DynCopula]{setup}). Only the righthand side of the formula should be
-passed. For example, if the pseudotime column is named \code{"pseudotime"}:
+If \code{assay = "counts"}, parametric models are fit. Multiple families and
+formulas can be passed, in which case the best fitting model is chosen across
+all combinations by minimizing AIC. Formulas should be written as a function
+of the name of the pseudotime column (what was passed as the argument
+\code{time_col} to \link[DynCopula]{setup}). Only the righthand side of the
+formula should be passed. For example, if the pseudotime column is named
+\code{"pseudotime"}:
 \itemize{
   \item \code{mu_formula = "1"}: mean is constant.
   \item \code{mu_formula = "pseudotime"}: mean varies linearly with

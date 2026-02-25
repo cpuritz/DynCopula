@@ -12,14 +12,10 @@
 #' @param nfold Number of folds for cross-validation. Default is \code{5}.
 #' @param control A \code{list} of control parameters for optimization.
 #'
-#' @details This function can only be run after
-#' \link[DynCopula]{generate_metacells} has been run.
-#'
-#' Cross-validation is used to select the value of \code{lambda}.
-#'
-#' Optimization is performed using L-BFGS. The \code{control} argument
-#' is a list that supplies control parameters for optimization. The following
-#' parameters can be supplied:
+#' @details Cross-validation is used to select the value of \code{lambda}.
+#' Optimization is performed using L-BFGS. The \code{control} argument is a list
+#' that supplies control parameters for optimization. The following parameters
+#' can be supplied:
 #' \itemize{
 #'   \item \code{max_itr} Maximum number of iterations. Default is \code{100}.
 #'   \item \code{history_size} History size. Default is \code{30}.
@@ -51,15 +47,12 @@ fit_dyn_corr <- function(sce,
                          control = list()) {
     assert_that(
         methods::is(sce, "SingleCellExperiment"),
-        "dyn_corr" %in% names(metadata(sce)),
-        "metacell_sce" %in% names(metadata(sce)$dyn_corr)
+        "dyn_corr" %in% names(metadata(sce))
     )
 
-    sce_mc <- metadata(sce)$dyn_corr$metacell_sce
-    dyn_corr <- metadata(sce_mc)$dyn_corr
-    assert_that("margins" %in% names(dyn_corr))
-
-    pseudotimes <- sce_mc[[dyn_corr$time_col]]
+    dyn_corr <- metadata(sce)$dyn_corr
+    assert_that(all(c("FX", "FXm") %in% names(dyn_corr)))
+    pseudotimes <- sce[[dyn_corr$time_col]]
 
     # Construct jittered pseudo-observations
     FX <- dyn_corr$FXm + (dyn_corr$FX - dyn_corr$FXm) * dyn_corr$V

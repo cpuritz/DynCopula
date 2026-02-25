@@ -6,6 +6,7 @@
 #' necessary metadata.
 #'
 #' @param sce A \code{SingleCellExperiment}.
+#' @param assay Which assay to use. Either \code{"counts"} or \code{"logcounts"}.
 #' @param time_col The name of the \code{colData} column containing pseudotimes.
 #' @param features Which genes to model. Default is all genes.
 #' @param cores The number of cores to use for parallel computations. Default
@@ -17,6 +18,7 @@
 #'
 #' @export
 setup <- function(sce,
+                  assay = c("counts", "logcounts"),
                   time_col,
                   features = rownames(sce),
                   cores = 1L) {
@@ -28,8 +30,7 @@ setup <- function(sce,
         all(features %in% rownames(sce))
     )
 
-    # Only allow use of counts assay
-    assay <- "counts"
+    assay <- match.arg(assay)
     assert_that(assay %in% SummarizedExperiment::assayNames(sce))
 
     metadata(sce)$dyn_corr <- list(

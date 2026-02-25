@@ -21,7 +21,5 @@ Sample cells along the trajectory at specified pseudotimes.
 }
 \details{
 To sample from the copula at the new times, calibration coefficients
-are interpolated at new times using either linear or spline
-interpolation. The copula is then sampled from at each new time, and the
-margins are converted to those fit to the original counts.
+are interpolated at new times using either linear or spline interpolation.
 }

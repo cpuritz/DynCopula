@@ -11,9 +11,7 @@
 #' @returns A \code{SingleCellExperiment}.
 #'
 #' @details To sample from the copula at the new times, calibration coefficients
-#' are interpolated at new times using either linear or spline
-#' interpolation. The copula is then sampled from at each new time, and the
-#' margins are converted to those fit to the original counts.
+#' are interpolated at new times using either linear or spline interpolation.
 #'
 #' @export
 sample_cells <- function(sce,
@@ -27,24 +25,33 @@ sample_cells <- function(sce,
     )
     interpolation <- match.arg(interpolation)
 
+    if (!metadata(sce)$dyn_corr$full_margins) {
+        stop("Cells can't be sampled since the margins were not saved. ",
+             "Rerun 'fit_margins' with 'save = TRUE'.")
+    }
+
     dyn_corr <- metadata(sce)$dyn_corr
     genes <- dyn_corr$features
     time_col <- dyn_corr$time_col
+
+    if (dyn_corr$assay == "logcounts") {
+        stop("NOT IMPLEMENTED YET")
+    }
 
     counts <- SummarizedExperiment::assay(sce, dyn_corr$assay)
     counts <- Matrix::t(counts[genes, ])
 
     # Interpolate calibration coefficients at new times
-    metacell_pseudotimes <- dyn_corr$metacell_sce[[time_col]]
+    pseudotimes <- sce[[time_col]]
     if (interpolation == "spline") {
         interp_fun <- function(y) {
-            spline_fit <- splines::interpSpline(metacell_pseudotimes, y)
+            spline_fit <- splines::interpSpline(pseudotimes, y)
             stats::predict(spline_fit, new_times)$y
         }
     } else {
         interp_fun <- function(y) {
             stats::approx(
-                x = metacell_pseudotimes,
+                x = pseudotimes,
                 y = y,
                 xout = new_times,
                 method = "linear"
@@ -54,14 +61,14 @@ sample_cells <- function(sce,
     eta_int <- apply(dyn_corr$eta, 2, interp_fun)
 
     message("Sampling copula")
-    # Each step is very quick, but we generally expect new_times to be large. So
-    # a progress bar is still needed, but we'll only update the progress bar
-    # every 100 steps to avoid it flashing due to rapid updates.
+    # Each step is very quick, but we generally expect new_times to be large.
+    # So a progress bar is still needed, but we'll only update the progress
+    # bar every 100 steps to avoid it flashing due to rapid updates.
     dstep <- 100
-    nsteps <- ceiling(length(metacell_pseudotimes) / dstep)
+    nsteps <- ceiling(length(new_times) / dstep)
     progressr::with_progress({
         pbar <- progressr::progressor(steps = nsteps)
-        U <- lapply(seq_along(metacell_pseudotimes), function(i) {
+        U <- lapply(seq_along(new_times), function(i) {
             # Convert interpolated calibration coefficients to correlation
             # coefficients
             R <- vec2cor(eta_int[i, ])
@@ -80,13 +87,12 @@ sample_cells <- function(sce,
     U <- do.call(rbind, U)
 
     message("Converting margins")
-    new_times_df <- stats::setNames(data.frame(new_times), dyn_corr$time_col)
-    pseudotimes <- sce[[time_col]]
+    new_times_df <- stats::setNames(data.frame(new_times), time_col)
     progressr::with_progress({
         pbar <- progressr::progressor(steps = length(genes))
         counts_sim <- lapply(seq_along(genes), function(i) {
             mdat <- data.frame(counts[, i], pseudotimes)
-            names(mdat) <- c("x", dyn_corr$time_col)
+            names(mdat) <- c("x", time_col)
             mfun <- dyn_corr$margins[[i]]
 
             # Get model parameters at new pseudotimes

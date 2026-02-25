@@ -39,14 +39,10 @@ Fit a dynamic Gaussian copula to scRNA-seq data using local
 likelihood.
 }
 \details{
-This function can only be run after
-\link[DynCopula]{generate_metacells} has been run.
-
 Cross-validation is used to select the value of \code{lambda}.
-
-Optimization is performed using L-BFGS. The \code{control} argument
-is a list that supplies control parameters for optimization. The following
-parameters can be supplied:
+Optimization is performed using L-BFGS. The \code{control} argument is a list
+that supplies control parameters for optimization. The following parameters
+can be supplied:
 \itemize{
   \item \code{max_itr} Maximum number of iterations. Default is \code{100}.
   \item \code{history_size} History size. Default is \code{30}.

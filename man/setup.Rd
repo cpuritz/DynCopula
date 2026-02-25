@@ -4,10 +4,18 @@
 \alias{setup}
 \title{Setup a SingleCellExperiment for analysis}
 \usage{
-setup(sce, time_col, features = rownames(sce), cores = 1L)
+setup(
+  sce,
+  assay = c("counts", "logcounts"),
+  time_col,
+  features = rownames(sce),
+  cores = 1L
+)
 }
 \arguments{
 \item{sce}{A \code{SingleCellExperiment}.}
+
+\item{assay}{Which assay to use. Either \code{"counts"} or \code{"logcounts"}.}
 
 \item{time_col}{The name of the \code{colData} column containing pseudotimes.}
 
