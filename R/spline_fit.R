@@ -7,8 +7,10 @@
 #' @param FX Matrix of pseudo-observations at covariate values.
 #' @param x Vector of covariate values corresponding to \code{FX}. Must have no
 #' duplicates.
-#' @param design Optional design matrix of discrete covariates. Default is
-#' \code{NULL} (no covariates).
+#' @param design Optional matrix discrete covariates. Default is \code{NULL}
+#' (no covariates).
+#' @param formula Optional formula for discrete covariates. Must be specified
+#' if \code{design} is not \code{NULL}.
 #' @param lambda Vector of smoothing parameters to test. Default is
 #' \code{10^(seq(-5, 5, length.out = 7))}.
 #' @param K Dimension of the spline basis matrix. Default is \code{30}.
@@ -48,6 +50,7 @@
 fit_spline_gaussian <- function(FX,
                                 x,
                                 design = NULL,
+                                formula = NULL,
                                 lambda = 10^(seq(-5, 5, length.out = 7)),
                                 K = 30,
                                 nfold = 5,
@@ -59,6 +62,7 @@ fit_spline_gaussian <- function(FX,
         !anyDuplicated(x),
         dim(FX)[1] == length(x),
         is.null(design) || is.data.frame(design),
+        (is.null(formula) && !is.null(design)) || methods::is(formula, "formula"),
         is.vector(lambda, mode = "numeric") && all(lambda > 0),
         is.numeric(K) && K >= 3,
         is.numeric(nfold) && nfold >= 2,
@@ -108,11 +112,11 @@ fit_spline_gaussian <- function(FX,
     dx <- x[length(x)] - min_x
     x <- (x - min_x) / dx
 
-    # Convert categorical covariates to 0-indexed integers
+    # Construct categorical design matrix
     if (is.data.frame(design)) {
-        Z <- apply(design, 2, function(x) {
-            as.integer(as.factor(x)) - 1L
-        })
+        Z <- stats::model.matrix(formula, design)
+        # Drop intercept
+        Z <- Z[, 2:dim(Z)[2]]
     } else {
         Z <- NULL
     }

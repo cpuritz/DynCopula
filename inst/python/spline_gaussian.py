@@ -20,13 +20,12 @@ def fit_gaussian_spline(
 	Parameters
 	----------
 	NX : np.ndarray
-		Normal-transformed pseudo-observations. Shape `(n, d)`. Rows
+		Normal-transformed pseudo-observations. Shape `(N, d)`. Rows
 		correspond to `x`.
 	B : np.ndarray
-        Basis matrix. Shape `(n, K)`.
+        Basis matrix. Shape `(N, K)`.
     Z : np.ndarray
-        Design matrix of categorical covariates. Shape `(n, L)` or `None`.
-        Entries must be integers with a minimum value of `0` in each column.
+        Design matrix of categorical covariates. Shape `(N, L)` or `None`.
 	lam : float
 	    Smoothing parameter.
 	control :  Mapping[str, Union[float, int]]
@@ -55,14 +54,6 @@ def fit_gaussian_spline(
 	# Set up tensors
 	NX = torch.tensor(NX, dtype = dtype)
 	B = torch.tensor(B, dtype = dtype)
-	
-	# Categorical covariates
-	if Z is not None:
-	    Z_mat = one_hot_encode(Z.astype(int), dtype = dtype)
-	    npar_cat = Z_mat.shape[1]
-	else:
-	    Z_mat = None
-	    npar_cat = 0
     
 	# Set initial coefficients all to zero
 	beta = torch.zeros(
@@ -89,7 +80,7 @@ def fit_gaussian_spline(
 		    beta = beta,
 		    NX = NX,
 		    B = B,
-		    Z = Z_mat,
+		    Z = Z,
 		    S = S,
 		    lam = lam,
 		    dtype = dtype
@@ -102,8 +93,8 @@ def fit_gaussian_spline(
 	
 	# Estimated model coefficients
 	eta_hat = B @ beta[:K, :]
-	if Z_mat is not None:
-		eta_hat = eta_hat + Z_mat @ beta[K:, :]
+	if Z is not None:
+		eta_hat = eta_hat + Z @ beta[K:, :]
 
 	return eta_hat.numpy()
     
@@ -129,8 +120,7 @@ def gaussian_spline_cv(
 	B : np.ndarray
         Basis matrix. Shape `(N, K)`.
     Z : np.ndarray
-        Design matrix of categorical covariates. Shape `(n, L)` or `None`.
-        Entries must be integers with a minimum value of `0` in each column.
+        Design matrix of categorical covariates. Shape `(N, L)` or `None`.
 	lam : float
 	    Smoothing parameter.
 	control :  Mapping[str, Union[float, int]]
@@ -171,18 +161,10 @@ def gaussian_spline_cv(
 	NX_test = torch.tensor(NX[test_ix, :], dtype = dtype)
 	B_train = torch.tensor(B[train_ix, :], dtype = dtype)
 	B_test = torch.tensor(B[test_ix, :], dtype = dtype)
-	
-	# Categorical covariates
-	if Z is not None:
-        Z_mat = one_hot_encode(Z.astype(int), dtype = dtype)
-        npar_cat = Z_mat.shape[1]
-	else:
-    	Z_mat = None
-        npar_cat = 0
-	
+
 	# Set initial coefficients all to zero
 	beta = torch.zeros(
-        size = (K + npar_cat, d * (d - 1) // 2),
+        size = (K + Z.shape[1], d * (d - 1) // 2),
         dtype = dtype,
         requires_grad = True
     )
@@ -206,7 +188,7 @@ def gaussian_spline_cv(
 		    beta = beta,
 		    NX = NX_train,
 		    B = B_train,
-		    Z = Z_mat,
+		    Z = Z,
 		    S = S,
 		    lam = lam,
 		    dtype = dtype
@@ -227,7 +209,7 @@ def gaussian_spline_cv(
 	# Estimated model coefficients
 	H_test = B_test @ beta[:K, :]
 	if Z_mat is not None:
-		H_test = H_test + Z_mat @ beta[K:, :]
+		H_test = H_test + Z @ beta[K:, :]
 	
 	# Marginal log-likelihood
 	log2pi = math.log(2 * math.pi)
@@ -238,51 +220,5 @@ def gaussian_spline_cv(
 	ll = torch.sum(copula_ll - margin_ll) / margin_ll.shape[0]
 	
 	return ll.numpy()
-
-###############################################################################
-
-def one_hot_encode(
-    Z: np.ndarray,
-    dtype: torch.dtype
-) -> torch.Tensor:
-    """
-    Construct sparse one-hot encodings for multiple categorical covariates.
-
-    Parameters
-    ----------
-    Z : np.ndarray
-        Integer-coded categorical labels. Minimum must be `0`.
-	dtype : torch.dtype
-	    Floating-point precision.
-
-    Returns
-    -------
-    Z_mat : torch.Tensor (sparse COO)
-        Binary tensor indicating covariate values.
-    """
-    
-    # Number of covariates
-    N, ncat = Z.shape
-    # Number of unique values per covariate
-    Ls = np.array([(Z[:, k].max().item() + 1) for k in range(ncat)])
-    
-    labels = torch.as_tensor(Z, dtype = torch.int64)
-    Z_list = []
-    for k in range(ncat):
-        lab = labels[:, k]
-        # Use 0 as reference
-        mask = (lab != 0)
-        rows = torch.arange(N, dtype = torch.int64)[mask]
-        cols = (lab[mask] - 1).to(torch.int64)
-        
-        Zk = torch.sparse_coo_tensor(
-            indices = torch.stack([rows, cols]),
-            values = torch.ones(rows.numel(), dtype = dtype),
-            size = (N, Ls[k] - 1),
-            dtype = dtype
-        ).coalesce()
-        Z_list.append(Zk)
-        
-    return torch.cat(Z_list, dim = 1).coalesce()
 
 ###############################################################################
