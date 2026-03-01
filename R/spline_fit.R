@@ -115,7 +115,7 @@ fit_spline_gaussian <- function(FX,
     # Construct categorical design matrix
     if (is.data.frame(design)) {
         Z <- stats::model.matrix(formula, design)
-        # Drop intercept
+        # Drop intercept since it will be included in the spline basis
         Z <- Z[, 2:dim(Z)[2]]
     } else {
         Z <- NULL
