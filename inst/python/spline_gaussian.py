@@ -230,7 +230,8 @@ def gaussian_spline_cv(
 		H_test = H_test + Z_mat @ beta[K:, :]
 	
 	# Marginal log-likelihood
-	margin_ll = (-0.5 * (math.log(2 * math.pi) + NX_test * NX_test)).sum(dim = 1)
+	log2pi = math.log(2 * math.pi)
+	margin_ll = (-0.5 * (log2pi + NX_test * NX_test)).sum(dim = 1)
 	# Copula log-likelihood
 	copula_ll = _log_mvn_density(NX_test, H_test, dtype)
 	# Average model log-likelihood
@@ -250,8 +251,7 @@ def one_hot_encode(
     Parameters
     ----------
     Z : np.ndarray
-        Integer-coded categorical labels. For covariate `k`, entries must be in
-        `range(Ls[k])`.
+        Integer-coded categorical labels. Minimum must be `0`.
 	dtype : torch.dtype
 	    Floating-point precision.
 
@@ -270,6 +270,7 @@ def one_hot_encode(
     Z_list = []
     for k in range(ncat):
         lab = labels[:, k]
+        # Use 0 as reference
         mask = (lab != 0)
         rows = torch.arange(N, dtype = torch.int64)[mask]
         cols = (lab[mask] - 1).to(torch.int64)

@@ -174,10 +174,11 @@ fit_spline_gaussian <- function(FX,
                 delay_load = FALSE
             )
         }
-        # NX, B, control already exported to workers
+        # NX, B, Z, control already exported to workers
         .fit_env$module$gaussian_spline_cv(
             NX = NX,
             B = B,
+            Z = Z,
             lam = lambda[lambda_ix],
             control = control,
             min_test_ix = min_test_ix - 1L,  # convert to 0-indexing
@@ -197,7 +198,9 @@ fit_spline_gaussian <- function(FX,
         ncomb <- dim(combs)[1]
         if (ncomb < cores) {
             message("NOTE: ", cores, " cores have been requested, but there ",
-                "are only ", ncomb, " tasks to run.")
+                    "are only ", ncomb, " tasks to run. Only using ", ncomb,
+                    " cores.")
+            cores <- ncomb
         }
     }
 
