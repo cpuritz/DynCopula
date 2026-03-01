@@ -154,7 +154,7 @@ fit_spline_gaussian <- function(FX,
         # Load the module if it hasn't been loaded yet
         if (!exists("module", envir = .fit_env, inherits = FALSE)) {
             .fit_env$module <- reticulate::import_from_path(
-                module = "spline_gaussian",
+                module = "gaussian_fit",
                 path = py_path,
                 delay_load = FALSE
             )
@@ -173,7 +173,7 @@ fit_spline_gaussian <- function(FX,
         # Load the module if it hasn't been loaded yet
         if (!exists("module", envir = .fit_env, inherits = FALSE)) {
             .fit_env$module <- reticulate::import_from_path(
-                module = "spline_gaussian",
+                module = "gaussian_fit",
                 path = py_path,
                 delay_load = FALSE
             )
