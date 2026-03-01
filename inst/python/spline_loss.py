@@ -4,6 +4,58 @@ from corr_utils import _vec2chol
 
 ###############################################################################
 
+def _spline_loss(
+	beta: torch.Tensor,
+	NX: torch.tensor,
+	B: torch.Tensor,
+	Z: torch.Tensor,
+	S: torch.Tensor,
+	lam: float,
+	dtype: torch.dtype
+) -> torch.Tensor:
+	"""
+	Compute the spline loss for a Gaussian copula.
+
+	Parameters
+	----------
+	beta : torch.Tensor
+        Coefficients. Shape `(K + L - 1, p)`.
+	NX : torch.tensor
+	    Normal-transformed pseudo-observations. Shape `(n, d)`.
+	B : torch.Tensor
+	    Basis matrix. Shape `(n, K)`.
+    Z : torch.Tensor
+        Design matrix or `None`.
+	S : torch.Tensor
+	    Penalty matrix. Shape `(K, K)`.
+	lam : float
+	    Smoothing parameter.
+	dtype : torch.dtype
+	    Floating-point precision.
+
+	Returns
+	-------
+	torch.Tensor
+		A scalar tensor representing the spline loss.
+	"""
+	
+	K = B.shape[1]
+	# First K rows are for continuous covariate, remaining rows are for
+	# categorical covariate
+	eta = B @ beta[:K, :]
+	if Z is not None:
+		eta = eta + Z @ beta[K:, :]
+
+	# Penalty term = lambda/2 * trace(beta.T * S * beta)
+	pen = 0.5 * lam * (beta[:K, :] * (S @ beta[:K, :])).sum()
+
+	# Negative log likelihood
+	nll = -torch.sum(_log_mvn_density(X = NX, V = eta, dtype = dtype))
+
+	return nll + pen
+
+###############################################################################
+
 def _log_mvn_density(
     X: torch.Tensor,
     V: torch.Tensor,
@@ -47,51 +99,6 @@ def _log_mvn_density(
 	half_log_det = diag.clamp_min(torch.finfo(dtype).eps).log().sum(-1)
 	
 	return -0.5 * (d * math.log(2 * math.pi) + M) - half_log_det
-
-###############################################################################
-
-def _spline_loss(
-    beta: torch.Tensor,
-    NX: torch.tensor,
-    B: torch.Tensor,
-    S: torch.Tensor,
-    lam: float,
-    dtype: torch.dtype
-) -> torch.Tensor:
-    """
-	Compute the spline loss for a Gaussian copula.
-
-	Parameters
-	----------
-	beta : torch.Tensor
-        Spline coefficients. Shape `(K, p)`.
-	NX : torch.tensor
-	    Normal-transformed pseudo-observations. Shape `(n, d)`.
-	B : torch.Tensor
-	    Basis matrix. Shape `(n, K)`.
-	S : torch.Tensor
-	    Penalty matrix. Shape `(K, K)`.
-	lam : float
-	    Smoothing parameter.
-	dtype : torch.dtype
-	    Floating-point precision.
-
-	Returns
-	-------
-	torch.Tensor
-		A scalar tensor representing the spline loss.
-	"""
-
-    # Parameter estimates
-    eta = B @ beta
-
-    # Negative log likelihood
-    nll = -torch.sum(_log_mvn_density(X = NX, V = eta, dtype = dtype))
-
-    # Penalty term = lambda/2 * trace(beta.T * S * beta)
-    pen = 0.5 * lam * (beta * (S @ beta)).sum()
-
-    return nll + pen
 
 ###############################################################################
 

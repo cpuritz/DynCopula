@@ -7,6 +7,8 @@
 #' @param FX Matrix of pseudo-observations at covariate values.
 #' @param x Vector of covariate values corresponding to \code{FX}. Must have no
 #' duplicates.
+#' @param design Optional design matrix of discrete covariates. Default is
+#' \code{NULL} (no covariates).
 #' @param lambda Vector of smoothing parameters to test. Default is
 #' \code{10^(seq(-5, 5, length.out = 7))}.
 #' @param K Dimension of the spline basis matrix. Default is \code{30}.
@@ -45,6 +47,7 @@
 #' @export
 fit_spline_gaussian <- function(FX,
                                 x,
+                                design = NULL,
                                 lambda = 10^(seq(-5, 5, length.out = 7)),
                                 K = 30,
                                 nfold = 5,
@@ -55,6 +58,7 @@ fit_spline_gaussian <- function(FX,
         is.vector(x, mode = "numeric"),
         !anyDuplicated(x),
         dim(FX)[1] == length(x),
+        is.null(design) || is.data.frame(design),
         is.vector(lambda, mode = "numeric") && all(lambda > 0),
         is.numeric(K) && K >= 3,
         is.numeric(nfold) && nfold >= 2,
@@ -92,17 +96,26 @@ fit_spline_gaussian <- function(FX,
     control$max_itr <- as.integer(control$max_itr)
     control$history_size <- as.integer(control$history_size)
 
-    # Sort covariates if needed
+    # Sort continuous covariate
     if (is.unsorted(x)) {
         ord <- order(x)
         x <- x[ord]
         FX <- FX[ord, ]
     }
 
-    # Scale covariates to [0, 1]
+    # Scale continuous covariate to [0, 1]
     min_x <- x[1]
     dx <- x[length(x)] - min_x
     x <- (x - min_x) / dx
+
+    # Convert categorical covariates to 0-indexed integers
+    if (is.data.frame(design)) {
+        Z <- apply(design, 2, function(x) {
+            as.integer(as.factor(x)) - 1L
+        })
+    } else {
+        Z <- NULL
+    }
 
     # Normal-transform pseudo-observations
     NX <- stats::qnorm(FX)
@@ -133,7 +146,6 @@ fit_spline_gaussian <- function(FX,
     # Python module once it has been loaded to avoid having to do it multiple
     # times on the same worker.
     .fit_env <- new.env(parent = emptyenv())
-
     fit_fun <- function(lam) {
         # Load the module if it hasn't been loaded yet
         if (!exists("module", envir = .fit_env, inherits = FALSE)) {
@@ -147,6 +159,7 @@ fit_spline_gaussian <- function(FX,
         .fit_env$module$fit_gaussian_spline(
             NX = NX,
             B = B,
+            Z = Z,
             lam = lam,
             control = control
         )
@@ -198,8 +211,8 @@ fit_spline_gaussian <- function(FX,
         # function calls, so we'll export them now.
         parallel::clusterExport(
             cl = cl,
-            varlist = c("NX", "B", "lambda", "fold_ids", "combs", "control",
-                        "py_path", ".fit_env"),
+            varlist = c("NX", "B", "lambda", "Z", "fold_ids", "combs",
+                        "control", "py_path", ".fit_env"),
             envir = environment()
         )
         # Initialize cluster
@@ -276,11 +289,9 @@ fit_spline_gaussian <- function(FX,
     }
 
     # Fit model using the optimal smoothing parameter
-    beta_hat <- fit_fun(lambda_opt)
+    Hhat <- fit_fun(lambda_opt)
 
-    # Matrix of estimated calibration coefficients
-    Hhat <- B %*% beta_hat
-    # # Matrix of estimated correlation coefficients
+    # Matrix of estimated correlation coefficients
     Rhat <- t(apply(Hhat, 1, function(v) {
         copula::P2p(vec2cor(v))
     }))
@@ -305,10 +316,10 @@ fit_spline_gaussian <- function(FX,
         x = x,
         NX = NX,
         eta = Hhat,
+        rho = Rhat,
         lambda = lambda_opt,
         cv = cv_df
     ))
 }
-
 
 ###############################################################################

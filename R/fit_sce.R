@@ -51,11 +51,17 @@ fit_dyn_corr <- function(sce,
     )
 
     dyn_corr <- metadata(sce)$dyn_corr
-    assert_that(all(c("FX", "FXm") %in% names(dyn_corr)))
+    assert_that("FX" %in% names(dyn_corr))
+    assay <- dyn_corr$assay
     pseudotimes <- sce[[dyn_corr$time_col]]
 
-    # Construct jittered pseudo-observations
-    FX <- dyn_corr$FXm + (dyn_corr$FX - dyn_corr$FXm) * dyn_corr$V
+    if (assay == "counts") {
+        # Construct jittered pseudo-observations
+        FX <- dyn_corr$FXm + (dyn_corr$FX - dyn_corr$FXm) * dyn_corr$V
+    } else {
+        # Already jittered for logcounts
+        FX <- dyn_corr$FX
+    }
 
     # Estimate copula parameters
     res <- fit_spline_gaussian(

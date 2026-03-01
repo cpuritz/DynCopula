@@ -7,6 +7,7 @@
 fit_spline_gaussian(
   FX,
   x,
+  design = NULL,
   lambda = 10^(seq(-5, 5, length.out = 7)),
   K = 30,
   nfold = 5,
@@ -19,6 +20,9 @@ fit_spline_gaussian(
 
 \item{x}{Vector of covariate values corresponding to \code{FX}. Must have no
 duplicates.}
+
+\item{design}{Optional design matrix of discrete covariates. Default is
+\code{NULL} (no covariates).}
 
 \item{lambda}{Vector of smoothing parameters to test. Default is
 \code{10^(seq(-5, 5, length.out = 7))}.}
