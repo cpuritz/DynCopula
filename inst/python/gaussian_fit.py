@@ -1,9 +1,8 @@
 import torch
-import torch.nn.functional as F
 import math
 import numpy as np
 from typing import Mapping, Union
-from spline_loss import _log_mvn_density, _spline_loss, _pen_mat
+from loss import _linear_loss, _spline_loss, _log_mvn_density, _pen_mat
 
 ###############################################################################
 
@@ -34,7 +33,7 @@ def fit_gaussian_spline(
 	Returns
 	-------
 	beta : np.ndarray
-		Estimated spline coefficients. Shape `(K, p)`.
+		Estimated coefficient matrix. Shape `(K + L, p)`.
 	"""
 	
 	max_iter = int(control["max_itr"])
@@ -52,12 +51,19 @@ def fit_gaussian_spline(
 	d = NX.shape[1]
 
 	# Set up tensors
-	NX = torch.tensor(NX, dtype = dtype)
-	B = torch.tensor(B, dtype = dtype)
+	NX_t = torch.tensor(NX, dtype = dtype)
+	B_t = torch.tensor(B, dtype = dtype)
+	
+	if Z is None:
+		L = 0
+		Z_t = None
+	else:
+		L = Z.shape[1]
+		Z_t = torch.tensor(Z, dtype = dtype)
     
 	# Set initial coefficients all to zero
 	beta = torch.zeros(
-        size = (K + npar_cat, d * (d - 1) // 2),
+        size = (K + L, d * (d - 1) // 2),
         dtype = dtype,
         requires_grad = True
     )
@@ -78,9 +84,9 @@ def fit_gaussian_spline(
 		optimizer.zero_grad()
 		loss = _spline_loss(
 		    beta = beta,
-		    NX = NX,
-		    B = B,
-		    Z = Z,
+		    NX = NX_t,
+		    B = B_t,
+		    Z = Z_t,
 		    S = S,
 		    lam = lam,
 		    dtype = dtype
@@ -89,14 +95,81 @@ def fit_gaussian_spline(
 		return loss
     
 	loss = optimizer.step(closure)
-	beta = beta.detach()
-	
-	# Estimated model coefficients
-	eta_hat = B @ beta[:K, :]
-	if Z is not None:
-		eta_hat = eta_hat + Z @ beta[K:, :]
+	return beta.detach().numpy()
 
-	return eta_hat.numpy()
+###############################################################################
+
+def fit_gaussian_linear(
+	NX: np.ndarray,
+	Z: np.ndarray,
+    control: Mapping[str, Union[float, int]]
+) -> np.ndarray:
+	"""
+	Fit a Gaussian GLM copula model.
+	
+	Parameters
+	----------
+	NX : np.ndarray
+		Normal-transformed pseudo-observations. Shape `(N, d)`. Rows
+		correspond to `x`.
+    Z : np.ndarray
+        Design matrix of categorical covariates. Shape `(N, L)` or `None`.
+	control :  Mapping[str, Union[float, int]]
+		Optimization control parameters.
+
+	Returns
+	-------
+	beta : np.ndarray
+		Estimated coefficient matrix. Shape `(L, p)`.
+	"""
+	
+	max_iter = int(control["max_itr"])
+	history_size = int(control["history_size"])
+	tolerance_grad = float(control["tolerance_grad"])
+	tolerance_change = float(control["tolerance_change"])
+	dtype = control["precision"]
+
+	if dtype == "float32":
+	    dtype = torch.float32
+	else:
+	    dtype = torch.float64
+	    
+	d = NX.shape[1]
+	L = Z.shape[1]
+
+	# Set up tensors
+	NX_t = torch.tensor(NX, dtype = dtype)
+	Z_t = torch.tensor(Z, dtype = dtype)
+    
+	# Set initial coefficients all to zero
+	beta = torch.zeros(
+        size = (L, d * (d - 1) // 2),
+        dtype = dtype,
+        requires_grad = True
+    )
+    
+	optimizer = torch.optim.LBFGS(
+		[beta],
+		line_search_fn = "strong_wolfe",
+		max_iter = max_iter,
+		history_size = history_size,
+		tolerance_grad = tolerance_grad,
+		tolerance_change = tolerance_change
+	)
+    
+	def closure():
+		optimizer.zero_grad()
+		loss = _linear_loss(
+		    beta = beta,
+		    NX = NX_t,
+		    Z = Z_t,
+		    dtype = dtype
+		)
+		loss.backward()
+		return loss
+    
+	loss = optimizer.step(closure)
+	return beta.detach().numpy()
     
 ###############################################################################
     
@@ -157,14 +230,28 @@ def gaussian_spline_cv(
 	train_ix = np.arange(N)[train_mask]
 
 	# Set up tensors
-	NX_train = torch.tensor(NX[train_ix, :], dtype = dtype)
-	NX_test = torch.tensor(NX[test_ix, :], dtype = dtype)
-	B_train = torch.tensor(B[train_ix, :], dtype = dtype)
-	B_test = torch.tensor(B[test_ix, :], dtype = dtype)
+	NX_t = torch.tensor(NX, dtype = dtype)
+	NX_train = NX_t[train_ix, :]
+	NX_test = NX_t[test_ix, :]
+	
+	B_t = torch.tensor(B, dtype = dtype)
+	B_train = B_t[train_ix, :]
+	B_test = B_t[test_ix, :]
+	
+	if Z is None:
+		L = 0
+		Z_t = None
+		Z_train = None
+		Z_test = None
+	else:
+		L = Z.shape[1]
+		Z_t = torch.tensor(Z, dtype = dtype)
+		Z_train = Z_t[train_ix, :]
+		Z_test = Z_t[test_ix, :]
 
 	# Set initial coefficients all to zero
 	beta = torch.zeros(
-        size = (K + Z.shape[1], d * (d - 1) // 2),
+        size = (K + L, d * (d - 1) // 2),
         dtype = dtype,
         requires_grad = True
     )
@@ -188,7 +275,7 @@ def gaussian_spline_cv(
 		    beta = beta,
 		    NX = NX_train,
 		    B = B_train,
-		    Z = Z,
+		    Z = Z_train,
 		    S = S,
 		    lam = lam,
 		    dtype = dtype
@@ -204,12 +291,9 @@ def gaussian_spline_cv(
 		return -1e10
 
 	# Predicted coefficients for test data
-	H_test = B_test @ beta
-	
-	# Estimated model coefficients
 	H_test = B_test @ beta[:K, :]
-	if Z_mat is not None:
-		H_test = H_test + Z @ beta[K:, :]
+	if Z is not None:
+		H_test = H_test + Z_test @ beta[K:, :]
 	
 	# Marginal log-likelihood
 	log2pi = math.log(2 * math.pi)

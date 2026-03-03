@@ -4,13 +4,12 @@
 #'
 #' @description Fit a dynamic Gaussian copula model using penalized splines.
 #'
-#' @param FX Matrix of pseudo-observations at covariate values.
-#' @param x Vector of covariate values corresponding to \code{FX}. Must have no
-#' duplicates.
-#' @param design Optional matrix discrete covariates. Default is \code{NULL}
-#' (no covariates).
-#' @param formula Optional formula for discrete covariates. Must be specified
-#' if \code{design} is not \code{NULL}.
+#' @param FX Matrix of pseudo-observations.
+#' @param design Design matrix. Rows correspond to rows in \code{FX}. A single
+#' continuous covariate can be included in a column named \code{"time"}. All
+#' other columns are treated as discrete covariates. If no covariates should be
+#' included in the model, pass a \code{data.frame} with a column of all ones.
+#' @param formula Formula for discrete covariates. Default is \code{~1}.
 #' @param lambda Vector of smoothing parameters to test. Default is
 #' \code{10^(seq(-5, 5, length.out = 7))}.
 #' @param K Dimension of the spline basis matrix. Default is \code{30}.
@@ -18,7 +17,12 @@
 #' @param cores Number of cores to use. Default is \code{1}.
 #' @param control A \code{list} of control parameters for optimization.
 #'
-#' @details Optimization is performed using L-BFGS. The \code{control} argument
+#' @details If a continuous covariate is included in the design matrix, it is
+#' modeled using penalized splines with the smoothing parameter selected via
+#' cross-validation. If no continuous covariate is included, then the arguments
+#' \code{lambda}, \code{K}, \code{nfold}, and \code{cores} have no effect.
+#'
+#' Optimization is performed using L-BFGS. The \code{control} argument
 #' is a list that supplies control parameters for optimization. The following
 #' parameters can be supplied:
 #' \itemize{
@@ -35,45 +39,40 @@
 #' }
 #' Any control parameters not specified are replaced by their default values.
 #'
-#' @return A list with the following components:
+#' @return A \code{gamGaussianCopula} object with the following components:
 #' \itemize{
-#'   \item \code{x}: Covariate values at which correlation coefficients were
-#'   estimated.
-#'   \item \code{NX}: Normal-transformed pseudo-observations.
-#'   \item \code{eta}: Matrix of estimated calibration coefficients.
-#'   \item \code{rho}: Matrix of estimated pairwise correlation coefficients.
+#'   \item \code{nobs}: Number of observations.
+#'   \item \code{dim}: Dimension of data.
+#'   \item \code{time}: Continuous covariate values at which the model was fit.
+#'   \item \code{beta}: Matrix of estimated model coefficients.
 #'   \item \code{lambda}: The optimal smoothing parameter.
 #'   \item \code{cv}: Cross-validation results.
+#'   \item \code{B}: Spline basis matrix.
+#'   \item \code{continuous}: Whether a continuous covariate was modeled.
+#'   \item \code{formula}: The formula for discrete covariates.
 #' }
 #'
 #' @export
-fit_spline_gaussian <- function(FX,
-                                x,
-                                design = NULL,
-                                formula = NULL,
-                                lambda = 10^(seq(-5, 5, length.out = 7)),
-                                K = 30,
-                                nfold = 5,
-                                cores = 1,
-                                control = list()) {
+fit_dyn_gc <- function(FX,
+                       design,
+                       formula = ~1,
+                       lambda = 10^(seq(-5, 5, length.out = 7)),
+                       K = 30,
+                       nfold = 5,
+                       cores = 1,
+                       control = list()) {
+    # Basic argument checks
     assert_that(
         is.numeric(FX) && is.matrix(FX),
-        is.vector(x, mode = "numeric"),
-        !anyDuplicated(x),
-        dim(FX)[1] == length(x),
-        is.null(design) || is.data.frame(design),
-        (is.null(formula) && !is.null(design)) || methods::is(formula, "formula"),
+        is.data.frame(design),
+        dim(FX)[1] == dim(design)[1],
+        methods::is(formula, "formula"),
         is.vector(lambda, mode = "numeric") && all(lambda > 0),
         is.numeric(K) && K >= 3,
         is.numeric(nfold) && nfold >= 2,
         is.numeric(cores) && cores >= 1,
         is.list(control)
     )
-
-    # Whether parallelization is required
-    cores <- as.integer(cores)
-    run_cv <- (length(lambda) > 1)
-    run_parallel <- (cores > 1L) && run_cv
 
     # Default control parameters
     defaults <- list(
@@ -100,37 +99,8 @@ fit_spline_gaussian <- function(FX,
     control$max_itr <- as.integer(control$max_itr)
     control$history_size <- as.integer(control$history_size)
 
-    # Sort continuous covariate
-    if (is.unsorted(x)) {
-        ord <- order(x)
-        x <- x[ord]
-        FX <- FX[ord, ]
-    }
-
-    # Scale continuous covariate to [0, 1]
-    min_x <- x[1]
-    dx <- x[length(x)] - min_x
-    x <- (x - min_x) / dx
-
-    # Construct categorical design matrix
-    if (is.data.frame(design)) {
-        Z <- stats::model.matrix(formula, design)
-        # Drop intercept since it will be included in the spline basis
-        Z <- Z[, 2:dim(Z)[2]]
-    } else {
-        Z <- NULL
-    }
-
     # Normal-transform pseudo-observations
     NX <- stats::qnorm(FX)
-
-    # Spline basis matrix
-    B <- splines::ns(
-        x = x,
-        df = K,
-        intercept = TRUE,
-        Boundary.knots = c(-control$boundary, 1 + control$boundary)
-    )
 
     # Ensure correct Python interpreter is used
     conf_dir <- rappdirs::user_config_dir("DynCopula")
@@ -143,6 +113,69 @@ fit_spline_gaussian <- function(FX,
 
     # Location of Python files
     py_path <- system.file("python", package = "DynCopula")
+
+    # Construct discrete design matrix
+    design_disc <- design[, colnames(design) != "time", drop = FALSE]
+    missing_vars <- setdiff(all.vars(formula), colnames(design_disc))
+    if (length(missing_vars) > 0L) {
+        stop("The following variables are missing from 'design': ",
+             paste(missing_vars, collapse = ", "))
+    }
+    Z <- stats::model.matrix(formula, design_disc)
+
+    # If no continuous covariate is specified, fit a GLM and return
+    if (!"time" %in% colnames(design)) {
+        # Force Python initialization
+        reticulate::py_config()
+
+        # Load fit function
+        fit_fun <- reticulate::import_from_path(
+            module = "gaussian_fit",
+            path = py_path,
+            delay_load = FALSE
+        )$fit_gaussian_linear
+
+        # Fit model
+        beta_hat <- fit_fun(NX, Z, control)
+
+        # Return model
+        res <- list(
+            nobs = dim(FX)[1],
+            dim = dim(FX)[2],
+            beta = beta_hat,
+            continuous = FALSE,
+            formula = formula
+        )
+        class(res) <- "gamGaussianCopula"
+        return(res)
+    }
+
+    # Whether parallelization is required. CV can be run with only one core,
+    # but parallelization is over lambda so no parallelization is done if CV
+    # is not going to be run.
+    cores <- as.integer(cores)
+    run_cv <- (length(lambda) > 1)
+    run_parallel <- (cores > 1L) && run_cv
+
+    # Sort continuous covariate and scale to [0, 1]
+    x <- design[["time"]]
+    if (is.unsorted(x)) {
+        ord <- order(x)
+        x <- x[ord]
+        FX <- FX[ord, , drop = FALSE]
+        design <- design[ord, , drop = FALSE]
+    }
+    min_x <- x[1]
+    dx <- x[length(x)] - min_x
+    x <- (x - min_x) / dx
+
+    # Spline basis matrix
+    B <- splines::ns(
+        x = x,
+        df = K,
+        intercept = FALSE,
+        Boundary.knots = c(-control$boundary, 1 + control$boundary)
+    )
 
     # Since Python functions are not serializable, we can't load the
     # optimization functions in the global environment. Instead, the functions
@@ -296,37 +329,39 @@ fit_spline_gaussian <- function(FX,
     }
 
     # Fit model using the optimal smoothing parameter
-    Hhat <- fit_fun(lambda_opt)
-
-    # Matrix of estimated correlation coefficients
-    Rhat <- t(apply(Hhat, 1, function(v) {
-        copula::P2p(vec2cor(v))
-    }))
-
-    # Ensure consistent shape of Rhat across all dimensions
-    d <- dim(FX)[2]
-    if (d == 2L) {
-        Rhat <- t(Rhat)
-    }
-
-    # Add numbered eta/rho labels
-    colnames(Hhat) <- paste0("eta", seq_len(choose(d, 2)))
-    ix_lab <- apply(utils::combn(seq_len(d), 2), 2, function(x) {
-        paste(x, collapse = '_')
-    })
-    colnames(Rhat) <- paste0("rho", ix_lab)
+    beta_hat <- fit_fun(lambda_opt)
 
     # Rescale covariates back to their original scale
     x <- x * dx + min_x
 
-    return(list(
-        x = x,
-        NX = NX,
-        eta = Hhat,
-        rho = Rhat,
+    res <- list(
+        nobs = dim(FX)[1],
+        dim = dim(FX)[2],
+        time = x,
+        beta = beta_hat,
         lambda = lambda_opt,
-        cv = cv_df
-    ))
+        cv = cv_df,
+        B = B,
+        continuous = TRUE,
+        formula = formula
+    )
+    class(res) <- "gamGaussianCopula"
+    return(res)
+}
+
+###############################################################################
+
+#' Print method for GAM Gaussian copula models
+#'
+#' @param x Object of class \code{gamGaussianCopula}.
+#' @param ... Additional arguments.
+#'
+#' @export
+#' @method print gamGaussianCopula
+print.gamGaussianCopula <- function(x, ...) {
+    l1 <- paste0(x$dim, "-dimensional GAM Gaussian copula fit")
+    l2 <- paste("nobs =", x$nobs)
+    cat(paste(l1, l2, sep = "\n"))
 }
 
 ###############################################################################

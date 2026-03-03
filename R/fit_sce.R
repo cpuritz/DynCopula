@@ -64,9 +64,12 @@ fit_dyn_corr <- function(sce,
     }
 
     # Estimate copula parameters
-    res <- fit_spline_gaussian(
+    design <- data.frame(
+        "time" = pseudotimes
+    )
+    res <- fit_dyn_gc(
         FX = FX,
-        x = pseudotimes,
+        design = design,
         lambda = lambda,
         K = K,
         nfold = nfold,
