@@ -7,8 +7,8 @@
 #'
 #' @param python_path The path to a Python interpreter.
 #'
-#' @details The NumPy and PyTorch libraries are required. This function writes
-#' a JSON file to \code{rappdirs::user_config_dir("DynCopula")}.
+#' @details The NumPy and PyTorch libraries are required for computations. This
+#' function writes a JSON file to \code{rappdirs::user_config_dir("DynCopula")}.
 #'
 #' @returns Nothing, called for side effects.
 #'

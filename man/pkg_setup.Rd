@@ -17,6 +17,6 @@ Setup the package by checking that necessary Python modules are
 installed, and then storing the path to the Python interpreter.
 }
 \details{
-The NumPy and PyTorch libraries are required. This function writes
-a JSON file to \code{rappdirs::user_config_dir("DynCopula")}.
+The NumPy and PyTorch libraries are required for computations. This
+function writes a JSON file to \code{rappdirs::user_config_dir("DynCopula")}.
 }
