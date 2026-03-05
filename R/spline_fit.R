@@ -6,10 +6,12 @@
 #'
 #' @param FX Matrix of pseudo-observations.
 #' @param design Design matrix. Rows correspond to rows in \code{FX}. A single
-#' continuous covariate can be included in a column named \code{"time"}. All
+#' smooth covariate can be included in a column named \code{"time"}. All
 #' other columns are treated as discrete covariates. If no covariates should be
 #' included in the model, pass a \code{data.frame} with a column of all ones.
-#' @param formula Formula for discrete covariates. Default is \code{~1}.
+#' @param disc_formula Formula for discrete covariates. Default is \code{~1}.
+#' @param int_formula Formula for interaction between smooth covariate and
+#' discrete covariates. Default is \code{~1} (no interaction).
 #' @param lambda Vector of smoothing parameters to test. Default is
 #' \code{10^(seq(-5, 5, length.out = 7))}.
 #' @param K Dimension of the spline basis matrix. Default is \code{30}.
@@ -17,10 +19,12 @@
 #' @param cores Number of cores to use. Default is \code{1}.
 #' @param control A \code{list} of control parameters for optimization.
 #'
-#' @details If a continuous covariate is included in the design matrix, it is
+#' @details If a smooth covariate is included in the design matrix, it is
 #' modeled using penalized splines with the smoothing parameter selected via
-#' cross-validation. If no continuous covariate is included, then the arguments
-#' \code{lambda}, \code{K}, \code{nfold}, and \code{cores} have no effect.
+#' cross-validation. A separate smoothing parameter is used to model each
+#' interaction between discrete covariates and the smooth covariate. If no
+#' smooth covariate is included, then the arguments \code{int_formula},
+#' \code{lambda}, \code{K}, \code{nfold}, and \code{cores} are ignored.
 #'
 #' Optimization is performed using L-BFGS. The \code{control} argument
 #' is a list that supplies control parameters for optimization. The following
@@ -43,19 +47,22 @@
 #' \itemize{
 #'   \item \code{nobs}: Number of observations.
 #'   \item \code{dim}: Dimension of data.
-#'   \item \code{time}: Continuous covariate values at which the model was fit.
+#'   \item \code{time}: Smooth covariate values at which the model was fit.
 #'   \item \code{beta}: Matrix of estimated model coefficients.
 #'   \item \code{lambda}: The optimal smoothing parameter.
 #'   \item \code{cv}: Cross-validation results.
 #'   \item \code{B}: Spline basis matrix.
-#'   \item \code{continuous}: Whether a continuous covariate was modeled.
-#'   \item \code{formula}: The formula for discrete covariates.
+#'   \item \code{smooth}: Whether a smooth covariate was modeled.
+#'   \item \code{disc_formula}: Formula for discrete covariates.
+#'   \item \code{int_formula}: Formula for interaction between the smooth
+#'   covariate and discrete covariates.
 #' }
 #'
 #' @export
 fit_dyn_gc <- function(FX,
                        design,
-                       formula = ~1,
+                       disc_formula = ~1,
+                       int_formula = ~1,
                        lambda = 10^(seq(-5, 5, length.out = 7)),
                        K = 30,
                        nfold = 5,
@@ -66,7 +73,8 @@ fit_dyn_gc <- function(FX,
         is.numeric(FX) && is.matrix(FX),
         is.data.frame(design),
         dim(FX)[1] == dim(design)[1],
-        methods::is(formula, "formula"),
+        methods::is(disc_formula, "formula"),
+        methods::is(int_formula, "formula"),
         is.vector(lambda, mode = "numeric") && all(lambda > 0),
         is.numeric(K) && K >= 3,
         is.numeric(nfold) && nfold >= 2,
@@ -114,16 +122,30 @@ fit_dyn_gc <- function(FX,
     # Location of Python files
     py_path <- system.file("python", package = "DynCopula")
 
+
+    if ("time" %in% colnames(design)) {
+        # Sort by smooth covariate
+        x <- design[["time"]]
+        if (is.unsorted(x)) {
+            ord <- order(x)
+            x <- x[ord]
+            FX <- FX[ord, , drop = FALSE]
+            design <- design[ord, , drop = FALSE]
+        }
+    }
+
     # Construct discrete design matrix
     design_disc <- design[, colnames(design) != "time", drop = FALSE]
-    missing_vars <- setdiff(all.vars(formula), colnames(design_disc))
+    all_vars <- c(all.vars(disc_formula), all.vars(int_formula))
+    missing_vars <- setdiff(all_vars, colnames(design_disc))
     if (length(missing_vars) > 0L) {
         stop("The following variables are missing from 'design': ",
              paste(missing_vars, collapse = ", "))
     }
-    Z <- stats::model.matrix(formula, design_disc)
+    Z <- stats::model.matrix(disc_formula, design_disc)
+    M <- stats::model.matrix(int_formula, design_disc)
 
-    # If no continuous covariate is specified, fit a GLM and return
+    # If no smooth covariate is specified, fit a GLM and return
     if (!"time" %in% colnames(design)) {
         # Force Python initialization
         reticulate::py_config()
@@ -143,8 +165,8 @@ fit_dyn_gc <- function(FX,
             nobs = dim(FX)[1],
             dim = dim(FX)[2],
             beta = beta_hat,
-            continuous = FALSE,
-            formula = formula
+            smooth = FALSE,
+            formula = disc_formula
         )
         class(res) <- "gamGaussianCopula"
         return(res)
@@ -157,14 +179,7 @@ fit_dyn_gc <- function(FX,
     run_cv <- (length(lambda) > 1)
     run_parallel <- (cores > 1L) && run_cv
 
-    # Sort continuous covariate and scale to [0, 1]
-    x <- design[["time"]]
-    if (is.unsorted(x)) {
-        ord <- order(x)
-        x <- x[ord]
-        FX <- FX[ord, , drop = FALSE]
-        design <- design[ord, , drop = FALSE]
-    }
+    # Scale smooth covariate to [0, 1]
     min_x <- x[1]
     dx <- x[length(x)] - min_x
     x <- (x - min_x) / dx
@@ -197,6 +212,7 @@ fit_dyn_gc <- function(FX,
             NX = NX,
             B = B,
             Z = Z,
+            M = M,
             lam = lam,
             control = control
         )
@@ -216,7 +232,8 @@ fit_dyn_gc <- function(FX,
             NX = NX,
             B = B,
             Z = Z,
-            lam = lambda[lambda_ix],
+            M = M,
+            lam = unlist(lambda_grid[lambda_ix, ]),
             control = control,
             min_test_ix = min_test_ix - 1L,  # convert to 0-indexing
             max_test_ix = max_test_ix - 1L
@@ -227,9 +244,13 @@ fit_dyn_gc <- function(FX,
         # N-fold cross validation with equal-sized contiguous blocks
         nfold <- as.integer(nfold)
         fold_ids <- cut(seq_along(x), breaks = nfold, labels = FALSE)
+
+        # Grid search for smoothing parameters
+        lambda_grid <- expand.grid(rep(list(lambda), dim(M)[2]))
+
         # All combinations of smoothing parameter and test fold ID
         combs <- expand.grid(
-            lambda_ix = seq_along(lambda),
+            lambda_ix = seq_len(dim(lambda_grid)[1]),
             fold = seq_len(nfold)
         )
         ncomb <- dim(combs)[1]
@@ -251,7 +272,7 @@ fit_dyn_gc <- function(FX,
         # function calls, so we'll export them now.
         parallel::clusterExport(
             cl = cl,
-            varlist = c("NX", "B", "lambda", "Z", "fold_ids", "combs",
+            varlist = c("NX", "B", "lambda_grid", "Z", "M", "fold_ids", "combs",
                         "control", "py_path", ".fit_env"),
             envir = environment()
         )
@@ -314,13 +335,11 @@ fit_dyn_gc <- function(FX,
                 FUN = sum
             )
             cv_df <- as.data.frame(as.table(ll_sum))
-            names(cv_df) <- c("lambda", "ll")
-
-            # Convert factor IDs to indices and then to values
-            cv_df$lambda <- lambda[as.integer(as.character(cv_df$lambda))]
+            names(cv_df) <- c("lambda_ix", "ll")
+            cv_df$lambda <- lambda_grid[cv_df$lambda_ix, , drop = FALSE]
 
             # Optimal value of lambda
-            lambda_opt <- cv_df$lambda[which.max(cv_df$ll)]
+            lambda_opt <- unlist(cv_df$lambda[which.max(cv_df$ll), ])
         })
     } else {
         # Only one lambda value passed, so no cross-validation needed
@@ -342,8 +361,9 @@ fit_dyn_gc <- function(FX,
         lambda = lambda_opt,
         cv = cv_df,
         B = B,
-        continuous = TRUE,
-        formula = formula
+        smooth = TRUE,
+        disc_formula = disc_formula,
+        int_formula = int_formula
     )
     class(res) <- "gamGaussianCopula"
     return(res)

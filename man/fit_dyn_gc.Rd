@@ -7,7 +7,8 @@
 fit_dyn_gc(
   FX,
   design,
-  formula = ~1,
+  disc_formula = ~1,
+  int_formula = ~1,
   lambda = 10^(seq(-5, 5, length.out = 7)),
   K = 30,
   nfold = 5,
@@ -19,11 +20,14 @@ fit_dyn_gc(
 \item{FX}{Matrix of pseudo-observations.}
 
 \item{design}{Design matrix. Rows correspond to rows in \code{FX}. A single
-continuous covariate can be included in a column named \code{"time"}. All
+smooth covariate can be included in a column named \code{"time"}. All
 other columns are treated as discrete covariates. If no covariates should be
 included in the model, pass a \code{data.frame} with a column of all ones.}
 
-\item{formula}{Formula for discrete covariates. Default is \code{~1}.}
+\item{disc_formula}{Formula for discrete covariates. Default is \code{~1}.}
+
+\item{int_formula}{Formula for interaction between smooth covariate and
+discrete covariates. Default is \code{~1} (no interaction).}
 
 \item{lambda}{Vector of smoothing parameters to test. Default is
 \code{10^(seq(-5, 5, length.out = 7))}.}
@@ -41,23 +45,27 @@ A \code{gamGaussianCopula} object with the following components:
 \itemize{
   \item \code{nobs}: Number of observations.
   \item \code{dim}: Dimension of data.
-  \item \code{time}: Continuous covariate values at which the model was fit.
+  \item \code{time}: Smooth covariate values at which the model was fit.
   \item \code{beta}: Matrix of estimated model coefficients.
   \item \code{lambda}: The optimal smoothing parameter.
   \item \code{cv}: Cross-validation results.
   \item \code{B}: Spline basis matrix.
-  \item \code{continuous}: Whether a continuous covariate was modeled.
-  \item \code{formula}: The formula for discrete covariates.
+  \item \code{smooth}: Whether a smooth covariate was modeled.
+  \item \code{disc_formula}: Formula for discrete covariates.
+  \item \code{int_formula}: Formula for interaction between the smooth
+  covariate and discrete covariates.
 }
 }
 \description{
 Fit a dynamic Gaussian copula model using penalized splines.
 }
 \details{
-If a continuous covariate is included in the design matrix, it is
+If a smooth covariate is included in the design matrix, it is
 modeled using penalized splines with the smoothing parameter selected via
-cross-validation. If no continuous covariate is included, then the arguments
-\code{lambda}, \code{K}, \code{nfold}, and \code{cores} have no effect.
+cross-validation. A separate smoothing parameter is used to model each
+interaction between discrete covariates and the smooth covariate. If no
+smooth covariate is included, then the arguments \code{int_formula},
+\code{lambda}, \code{K}, \code{nfold}, and \code{cores} are ignored.
 
 Optimization is performed using L-BFGS. The \code{control} argument
 is a list that supplies control parameters for optimization. The following

@@ -4,7 +4,7 @@ from corr_utils import _vec2chol
 
 ###############################################################################
 
-def _linear_loss(
+def _glm_loss(
 	beta: torch.Tensor,
 	NX: torch.tensor,
 	Z: torch.Tensor,
@@ -20,7 +20,7 @@ def _linear_loss(
 	NX : torch.tensor
 	    Normal-transformed pseudo-observations. Shape `(N, d)`.
     Z : torch.Tensor
-        Design matrix. Shape `(N, L)`.
+        Discrete design matrix. Shape `(N, L)`.
 	dtype : torch.dtype
 	    Floating-point precision.
 
@@ -36,32 +36,35 @@ def _linear_loss(
 
 ###############################################################################
 
-def _spline_loss(
+def _gam_loss(
 	beta: torch.Tensor,
 	NX: torch.tensor,
 	B: torch.Tensor,
 	Z: torch.Tensor,
+	M: torch.Tensor,
 	S: torch.Tensor,
 	lam: float,
 	dtype: torch.dtype
 ) -> torch.Tensor:
 	"""
-	Compute the spline loss for a Gaussian copula.
+	Compute the loss for a Gaussian GAM copula.
 
 	Parameters
 	----------
 	beta : torch.Tensor
-        Coefficients. Shape `(K + L, p)`.
+        Coefficients. Shape `(K * L1 + L2, p)`.
 	NX : torch.tensor
 	    Normal-transformed pseudo-observations. Shape `(N, d)`.
 	B : torch.Tensor
 	    Basis matrix. Shape `(N, K)`.
     Z : torch.Tensor
-        Design matrix of shape `(N, L)` or `None`.
+        Discrete design matrix of shape `(N, L2)`.
+    M : torch.Tensor
+        Interaction design matrix of shape `(N, L1)`.
 	S : torch.Tensor
 	    Penalty matrix. Shape `(K, K)`.
-	lam : float
-	    Smoothing parameter.
+	lam : torch.Tensor
+	    Smoothing parameters. Shape `(L1, )`.
 	dtype : torch.dtype
 	    Floating-point precision.
 
@@ -72,18 +75,26 @@ def _spline_loss(
 	"""
 	
 	K = B.shape[1]
-	# First K rows are for continuous covariate, remaining rows are for
-	# categorical covariate
-	beta_cts = beta[:K, :]
-	eta = B @ beta_cts
-	if Z is not None:
-		eta = eta + Z @ beta[K:, :]
-
-	# Penalty term = lambda/2 * trace(beta.T * S * beta)
-	pen = 0.5 * lam * (beta_cts * (S @ beta_cts)).sum()
+	L1 = M.shape[1]
+	L2 = Z.shape[1]
+	p = beta.shape[1]
+	
+	alpha = beta[:L2, :]                          # (L2, p)
+	betas = beta[L2:, :].view(L1, K, p)           # (L1, K, p)
+	s_per_j = B.unsqueeze(0) @ betas              # (L1, N, p)
+	eta = torch.einsum('ij,jip->ip', M, s_per_j)  # (N, p)
+	eta = eta + Z @ alpha
 
 	# Negative log likelihood
 	nll = -torch.sum(_log_mvn_density(X = NX, V = eta, dtype = dtype))
+	
+	## Second order penalty
+	# S @ beta[j]
+	Sbeta = torch.einsum('kl,jlp->jkp', S, betas)
+	# tr(beta[j]^T @ S @ beta[j]) = sum(beta[j] * Sbeta)
+	quad = (betas * Sbeta).sum(dim = (1, 2))
+	# 0.5 <lam, quad>
+	pen = 0.5 * (lam * quad).sum()
 
 	return nll + pen
 

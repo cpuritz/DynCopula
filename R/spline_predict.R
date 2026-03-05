@@ -35,28 +35,31 @@ predict.gamGaussianCopula <- function(object,
 
     type <- match.arg(type)
 
+    all_vars <- c(all.vars(object$disc_formula), all.vars(object$int_formula))
     design_disc <- design_new[, colnames(design_new) != "time", drop = FALSE]
-    missing_vars <- setdiff(all.vars(object$formula), colnames(design_disc))
+    missing_vars <- setdiff(all_vars, colnames(design_disc))
     if (length(missing_vars) > 0L) {
         stop("The following columns are missing in the design matrix: ",
              paste(missing_vars, collapse = ", "))
     }
-    Z_new <- stats::model.matrix(object$formula, design_disc)
+    Z_new <- stats::model.matrix(object$disc_formula, design_disc)
+    M_new <- stats::model.matrix(object$int_formula, design_disc)
 
     # Construct matrix of estimated calibration coefficients
-    if (!object$continuous) {
+    if (!object$smooth) {
         Hhat <- Z_new %*% object$beta
     } else {
-        # Extract new continuous covariate values
+        # Extract new smooth covariate values
         x_new <- design_new[["time"]]
 
-        # Standard scale continuous covariate on original scale
+        # Standard scale smooth covariate on original scale
         min_x <- min(object$time)
         max_x <- max(object$time)
         x_new <- (x_new - min_x) / (max_x - min_x)
 
         # Construct basis matrix for new covariates
-        B_attr <- attributes(object$B)
+        B <- object$B
+        B_attr <- attributes(B)
         B_new <- splines::ns(
             x = x_new,
             knots = B_attr$knots,
@@ -64,15 +67,24 @@ predict.gamGaussianCopula <- function(object,
             intercept = B_attr$intercept
         )
 
-        # Matrix of estimated calibration coefficients
         beta <- object$beta
-        K <- dim(object$B)[2]
-        cts_coef <- beta[1:K, , drop = FALSE]
-        disc_coef <- beta[(K + 1):dim(beta)[1], , drop = FALSE]
-        Hhat <- B_new %*% cts_coef + Z_new %*% disc_coef
+        K <- dim(B)[2]
+        L1 <- dim(M_new)[2]
+        L2 <- dim(Z_new)[2]
+        p <- dim(beta)[2]
+        N <- dim(FX_new)[1]
+
+        betas <- array(beta[(L2 + 1):(L2 + K * L1), ], dim = c(K, p, L1))
+        betas <- aperm(betas, c(3, 1, 2))  # (L1, K, p)
+        Hhat <- matrix(0, N, p)
+        for (j in 1:L1) {
+            Hhat <- Hhat + M_new[, j] * (B_new %*% betas[j, , ])
+        }
+        Hhat <- Hhat + Z_new %*% beta[1:L2, ]
     }
 
     # Add column labels
+    d <- dim(FX_new)[2]
     colnames(Hhat) <- paste0("eta", seq_len(choose(d, 2)))
     if (type == "link") {
         return(Hhat)
@@ -84,16 +96,14 @@ predict.gamGaussianCopula <- function(object,
     }))
 
     # Ensure consistent shape of Rhat across all dimensions
-    d <- dim(FX_new)[2]
     if (d == 2L) {
         Rhat <- t(Rhat)
     }
 
     # Add column labels
-    ix_lab <- apply(utils::combn(seq_len(d), 2), 2, function(x) {
-        paste(x, collapse = '_')
+    colnames(Rhat) <- apply(utils::combn(seq_len(d), 2), 2, function(x) {
+        paste0("rho", paste(x, collapse = '_'))
     })
-    colnames(Rhat) <- paste0("rho", ix_lab)
 
     return(Rhat)
 }
