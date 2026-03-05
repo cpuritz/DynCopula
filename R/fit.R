@@ -1,8 +1,8 @@
 ###############################################################################
 
-#' Spline estimation of dynamic Gaussian copula model
+#' Generalized Additive Model for a Gaussian Copula
 #'
-#' @description Fit a dynamic Gaussian copula model using penalized splines.
+#' @description Fit a generalized additive model for a Gaussian copula.
 #'
 #' @param FX Matrix of pseudo-observations.
 #' @param design Design matrix. Rows correspond to rows in \code{FX}. A single
@@ -10,8 +10,8 @@
 #' other columns are treated as discrete covariates. If no covariates should be
 #' included in the model, pass a \code{data.frame} with a column of all ones.
 #' @param disc_formula Formula for discrete covariates. Default is \code{~1}.
-#' @param int_formula Formula for interaction between smooth covariate and
-#' discrete covariates. Default is \code{~1} (no interaction).
+#' @param int_formula Formula for interactions between the smooth covariate and
+#' the discrete covariates. Default is \code{~1} (no interaction).
 #' @param lambda Vector of smoothing parameters to test. Default is
 #' \code{10^(seq(-5, 5, length.out = 7))}.
 #' @param K Dimension of the spline basis matrix. Default is \code{30}.
@@ -54,12 +54,12 @@
 #'   \item \code{B}: Spline basis matrix.
 #'   \item \code{smooth}: Whether a smooth covariate was modeled.
 #'   \item \code{disc_formula}: Formula for discrete covariates.
-#'   \item \code{int_formula}: Formula for interaction between the smooth
+#'   \item \code{int_formula}: Formula for interactions between the smooth
 #'   covariate and discrete covariates.
 #' }
 #'
 #' @export
-fit_dyn_gc <- function(FX,
+fit_gam_gc <- function(FX,
                        design,
                        disc_formula = ~1,
                        int_formula = ~1,
@@ -208,7 +208,7 @@ fit_dyn_gc <- function(FX,
             )
         }
         # Everything but lam already exported to workers
-        .fit_env$module$fit_gaussian_spline(
+        .fit_env$module$fit_gaussian_gam(
             NX = NX,
             B = B,
             Z = Z,
@@ -228,7 +228,7 @@ fit_dyn_gc <- function(FX,
             )
         }
         # NX, B, Z, control already exported to workers
-        .fit_env$module$gaussian_spline_cv(
+        .fit_env$module$gaussian_gam_cv(
             NX = NX,
             B = B,
             Z = Z,

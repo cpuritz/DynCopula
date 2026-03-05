@@ -6,7 +6,7 @@ from loss import _glm_loss, _gam_loss, _log_mvn_density, _pen_mat
 
 ###############################################################################
 
-def fit_gaussian_spline(
+def fit_gaussian_gam(
 	NX: np.ndarray,
 	B: np.ndarray,
 	Z: np.ndarray,
@@ -177,7 +177,7 @@ def fit_gaussian_linear(
     
 ###############################################################################
     
-def gaussian_spline_cv(
+def gaussian_gam_cv(
 	NX: np.ndarray,
 	B: np.ndarray,
 	Z: np.ndarray,
