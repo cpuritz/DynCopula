@@ -9,13 +9,13 @@
 #' @param FX_new Matrix of new pseudo-observations.
 #' @param design_new New design matrix. Rows correspond to rows in
 #' \code{FX_new}. Must include the same columns as in the design matrix in the
-#' original \link[DynCopula]{fit_dyn_gc} call.
+#' original \link[DynCopula]{fit_gamgc} call.
 #' @param type The type of prediction required. The default is correlation
 #' coefficients (\code{"response"}). The \code{"link"} option returns
 #' predictions of the calibration coefficients.
 #' @param ... Additional arguments.
 #'
-#' @return A matrix of coefficients.
+#' @returns A matrix of coefficients.
 #'
 #' @export
 #'
@@ -43,12 +43,13 @@ predict.gamGaussianCopula <- function(object,
              paste(missing_vars, collapse = ", "))
     }
     Z_new <- stats::model.matrix(object$disc_formula, design_disc)
-    M_new <- stats::model.matrix(object$int_formula, design_disc)
 
     # Construct matrix of estimated calibration coefficients
     if (!object$smooth) {
         Hhat <- Z_new %*% object$beta
     } else {
+        M_new <- stats::model.matrix(object$int_formula, design_disc)
+
         # Extract new smooth covariate values
         x_new <- design_new[["time"]]
 

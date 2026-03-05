@@ -7,8 +7,7 @@
 fit_gamgc(
   FX,
   design,
-  disc_formula = ~1,
-  int_formula = ~1,
+  formula,
   lambda = 10^(seq(-5, 5, length.out = 7)),
   K = 30,
   nfold = 5,
@@ -24,12 +23,9 @@ smooth covariate can be included in a column named \code{"time"}. All
 other columns are treated as discrete covariates. If no covariates should be
 included in the model, pass a \code{data.frame} with a column of all ones.}
 
-\item{disc_formula}{Formula for discrete covariates. Default is \code{~1}.}
+\item{formula}{Formula for covariates.}
 
-\item{int_formula}{Formula for interactions between the smooth covariate and
-the discrete covariates. Default is \code{~1} (no interaction).}
-
-\item{lambda}{Vector of smoothing parameters to test. Default is
+\item{lambda}{Vector of penalty parameters to test. Default is
 \code{10^(seq(-5, 5, length.out = 7))}.}
 
 \item{K}{Dimension of the spline basis matrix. Default is \code{30}.}
@@ -60,12 +56,20 @@ A \code{gamGaussianCopula} object with the following components:
 Fit a generalized additive model for a Gaussian copula.
 }
 \details{
-If a smooth covariate is included in the design matrix, it is
-modeled using penalized splines with the smoothing parameter selected via
-cross-validation. A separate smoothing parameter is used to model each
-interaction between discrete covariates and the smooth covariate. If no
-smooth covariate is included, then the arguments \code{int_formula},
-\code{lambda}, \code{K}, \code{nfold}, and \code{cores} are ignored.
+The formula can include a single smooth covariate and any number of
+discrete covariates. Specify the smooth covariate by \code{s(t)}, replacing
+\code{t} with the name of the smooth covariate in the design matrix. If
+interaction terms between discrete covariates and the smooth covariate are
+included, a baseline (intercept) smooth function will be included in the
+model.
+
+If a smooth covariate is included in the formula, it is modeled
+using penalized splines with a roughness penalty. The discrete covariates are
+penalized by an L2 penalty. The penalty parameters are selected via
+cross-validation. A separate penalty parameter is used to for each term
+which includes the smooth covariate. This includes a baseline smooth
+function as well as any interactions between the smooth covariate and
+discrete covariates.
 
 Optimization is performed using L-BFGS. The \code{control} argument
 is a list that supplies control parameters for optimization. The following
@@ -83,4 +87,39 @@ parameters can be supplied:
   Default is \code{0.05}.
 }
 Any control parameters not specified are replaced by their default values.
+}
+\examples{
+\dontrun{
+library(DynCopula)
+
+N <- 1000
+# Smooth covariate
+t <- sort(runif(N))
+# Discrete covariates
+x1 <- c(rep("a", N / 2), rep("b", N / 2))
+x2 <- rep(seq(5), N / 5)
+design <- data.frame(time = t, x1 = x1, x2 = x2)
+
+# Covariate-dependent correlation
+rho <- function(t, x1, x2) {
+    rho_s <- 0.7 * cos(4 * pi * t)
+    rho_x1 <- (x1 == "b") * 0.1
+    rho_x2 <- -0.01 * x2
+    return(rho_s + rho_x1 + rho_x2)
+}
+# Sample from copula
+U <- t(sapply(seq(N), function(i) {
+    cop <- copula::normalCopula(param = rho(t[i], x1[i], x2[i]), dim = 2, dispstr = "un")
+    return(copula::rCopula(1L, cop))
+}))
+
+# Smooth covariate with no discrete covariates
+gc1 <- fit_gamgc(U, design)
+rho_pred1 <- predict(gc1, U, design)
+
+# Smooth covariate with intercepts dependent on discrete covariates
+gc2 <- fit_gamgc(U, design, disc_formula = ~x1 + x2)
+rho_pred2 <- predict(gc1, U, design)
+}
+
 }

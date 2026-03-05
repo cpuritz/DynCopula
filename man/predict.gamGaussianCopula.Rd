@@ -13,7 +13,7 @@
 
 \item{design_new}{New design matrix. Rows correspond to rows in
 \code{FX_new}. Must include the same columns as in the design matrix in the
-original \link[DynCopula]{fit_dyn_gc} call.}
+original \link[DynCopula]{fit_gamgc} call.}
 
 \item{type}{The type of prediction required. The default is correlation
 coefficients (\code{"response"}). The \code{"link"} option returns

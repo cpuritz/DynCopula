@@ -9,22 +9,28 @@
 #' smooth covariate can be included in a column named \code{"time"}. All
 #' other columns are treated as discrete covariates. If no covariates should be
 #' included in the model, pass a \code{data.frame} with a column of all ones.
-#' @param disc_formula Formula for discrete covariates. Default is \code{~1}.
-#' @param int_formula Formula for interactions between the smooth covariate and
-#' the discrete covariates. Default is \code{~1} (no interaction).
-#' @param lambda Vector of smoothing parameters to test. Default is
+#' @param formula Formula for covariates.
+#' @param lambda Vector of penalty parameters to test. Default is
 #' \code{10^(seq(-5, 5, length.out = 7))}.
 #' @param K Dimension of the spline basis matrix. Default is \code{30}.
 #' @param nfold Number of folds for cross-validation. Default is \code{5}.
 #' @param cores Number of cores to use. Default is \code{1}.
 #' @param control A \code{list} of control parameters for optimization.
 #'
-#' @details If a smooth covariate is included in the design matrix, it is
-#' modeled using penalized splines with the smoothing parameter selected via
-#' cross-validation. A separate smoothing parameter is used to model each
-#' interaction between discrete covariates and the smooth covariate. If no
-#' smooth covariate is included, then the arguments \code{int_formula},
-#' \code{lambda}, \code{K}, \code{nfold}, and \code{cores} are ignored.
+#' @details The formula can include a single smooth covariate and any number of
+#' discrete covariates. Specify the smooth covariate by \code{s(t)}, replacing
+#' \code{t} with the name of the smooth covariate in the design matrix. If
+#' interaction terms between discrete covariates and the smooth covariate are
+#' included, a baseline (intercept) smooth function will be included in the
+#' model.
+#'
+#' If a smooth covariate is included in the formula, it is modeled
+#' using penalized splines with a roughness penalty. The discrete covariates are
+#' penalized by an L2 penalty. The penalty parameters are selected via
+#' cross-validation. A separate penalty parameter is used to for each term
+#' which includes the smooth covariate. This includes a baseline smooth
+#' function as well as any interactions between the smooth covariate and
+#' discrete covariates.
 #'
 #' Optimization is performed using L-BFGS. The \code{control} argument
 #' is a list that supplies control parameters for optimization. The following
@@ -43,7 +49,7 @@
 #' }
 #' Any control parameters not specified are replaced by their default values.
 #'
-#' @return A \code{gamGaussianCopula} object with the following components:
+#' @returns A \code{gamGaussianCopula} object with the following components:
 #' \itemize{
 #'   \item \code{nobs}: Number of observations.
 #'   \item \code{dim}: Dimension of data.
@@ -58,11 +64,44 @@
 #'   covariate and discrete covariates.
 #' }
 #'
+#' @examples
+#' \dontrun{
+#' library(DynCopula)
+#'
+#' N <- 1000
+#' # Smooth covariate
+#' t <- sort(runif(N))
+#' # Discrete covariates
+#' x1 <- c(rep("a", N / 2), rep("b", N / 2))
+#' x2 <- rep(seq(5), N / 5)
+#' design <- data.frame(time = t, x1 = x1, x2 = x2)
+#'
+#' # Covariate-dependent correlation
+#' rho <- function(t, x1, x2) {
+#'     rho_s <- 0.7 * cos(4 * pi * t)
+#'     rho_x1 <- (x1 == "b") * 0.1
+#'     rho_x2 <- -0.01 * x2
+#'     return(rho_s + rho_x1 + rho_x2)
+#' }
+#' # Sample from copula
+#' U <- t(sapply(seq(N), function(i) {
+#'     cop <- copula::normalCopula(param = rho(t[i], x1[i], x2[i]), dim = 2, dispstr = "un")
+#'     return(copula::rCopula(1L, cop))
+#' }))
+#'
+#' # Smooth covariate with no discrete covariates
+#' gc1 <- fit_gamgc(U, design)
+#' rho_pred1 <- predict(gc1, U, design)
+#'
+#' # Smooth covariate with intercepts dependent on discrete covariates
+#' gc2 <- fit_gamgc(U, design, disc_formula = ~x1 + x2)
+#' rho_pred2 <- predict(gc1, U, design)
+#' }
+#'
 #' @export
 fit_gamgc <- function(FX,
                       design,
-                      disc_formula = ~1,
-                      int_formula = ~1,
+                      formula,
                       lambda = 10^(seq(-5, 5, length.out = 7)),
                       K = 30,
                       nfold = 5,
@@ -73,14 +112,20 @@ fit_gamgc <- function(FX,
         is.numeric(FX) && is.matrix(FX),
         is.data.frame(design),
         dim(FX)[1] == dim(design)[1],
-        methods::is(disc_formula, "formula"),
-        methods::is(int_formula, "formula"),
+        methods::is(formula, "formula"),
         is.vector(lambda, mode = "numeric") && all(lambda > 0),
         is.numeric(K) && K >= 3,
         is.numeric(nfold) && nfold >= 2,
         is.numeric(cores) && cores >= 1,
         is.list(control)
     )
+
+    cores <- as.integer(cores)
+
+    # Parse formula
+    formulas <- .parse_formula(formula)
+    disc_formula <- formulas$disc
+    int_formula <- formulas$int
 
     # Default control parameters
     defaults <- list(
@@ -107,9 +152,6 @@ fit_gamgc <- function(FX,
     control$max_itr <- as.integer(control$max_itr)
     control$history_size <- as.integer(control$history_size)
 
-    # Normal-transform pseudo-observations
-    NX <- stats::qnorm(FX)
-
     # Ensure correct Python interpreter is used
     conf_dir <- rappdirs::user_config_dir("DynCopula")
     conf_path <- file.path(conf_dir, "config.json")
@@ -119,9 +161,253 @@ fit_gamgc <- function(FX,
         RETICULATE_AUTOCONFIGURE = "FALSE"
     )
 
+    if (is.null(int_formula)) {
+        .glm_fit(
+            FX = FX,
+            design = design,
+            disc_formula = disc_formula,
+            lambda = lambda,
+            nfold = nfold,
+            cores = cores,
+            control = control
+        )
+    } else {
+        .gam_fit(
+            FX = FX,
+            design = design,
+            disc_formula = disc_formula,
+            int_formula = int_formula,
+            lambda = lambda,
+            K = K,
+            nfold = nfold,
+            cores = cores,
+            control = control
+        )
+    }
+}
+
+###############################################################################
+
+#' Internal function to fit a GLM Gaussian copula model
+#'
+#' @inheritParams fit_gamgc
+#' @param disc_formula Formula for discrete covariates.
+.glm_fit <- function(FX,
+                     design,
+                     disc_formula,
+                     lambda,
+                     nfold,
+                     cores,
+                     control) {
+    # Normal-transform pseudo-observations
+    NX <- stats::qnorm(FX)
+
     # Location of Python files
     py_path <- system.file("python", package = "DynCopula")
 
+    # Construct discrete design matrix
+    missing_vars <- setdiff(all.vars(disc_formula), colnames(design))
+    if (length(missing_vars) > 0L) {
+        stop("The following variables are missing from 'design': ",
+             paste(missing_vars, collapse = ", "))
+    }
+    Z <- stats::model.matrix(disc_formula, design)
+
+    N <- dim(NX)[1]
+    d <- dim(NX)[2]
+    L <- dim(Z)[2]
+
+    # Whether parallelization is required. CV can be run with only one core,
+    # but parallelization is over lambda so no parallelization is done if CV
+    # is not going to be run.
+    run_cv <- (length(lambda) > 1)
+    run_parallel <- (cores > 1L) && run_cv
+
+    # Since Python functions are not serializable, we can't load the
+    # optimization functions in the global environment. Instead, the functions
+    # needs to be loaded on each worker. This environment stores the
+    # Python module once it has been loaded to avoid having to do it multiple
+    # times on the same worker.
+    .fit_env <- new.env(parent = emptyenv())
+    fit_fun <- function(lam) {
+        # Load the module if it hasn't been loaded yet
+        if (!exists("module", envir = .fit_env, inherits = FALSE)) {
+            .fit_env$module <- reticulate::import_from_path(
+                module = "glm_fit",
+                path = py_path,
+                delay_load = FALSE
+            )
+        }
+        # Everything but lam already exported to workers
+        .fit_env$module$fit_gaussian_glm(
+            NX = NX,
+            Z = Z,
+            lam = lam,
+            control = control
+        )
+    }
+
+    cv_fun <- function(lambda_ix, min_test_ix, max_test_ix) {
+        # Load the module if it hasn't been loaded yet
+        if (!exists("module", envir = .fit_env, inherits = FALSE)) {
+            .fit_env$module <- reticulate::import_from_path(
+                module = "glm_fit",
+                path = py_path,
+                delay_load = FALSE
+            )
+        }
+        # NX, Z, control already exported to workers
+        .fit_env$module$gaussian_glm_cv(
+            NX = NX,
+            Z = Z,
+            lam = lambda[lambda_ix],
+            control = control,
+            min_test_ix = min_test_ix - 1L,  # convert to 0-indexing
+            max_test_ix = max_test_ix - 1L
+        )
+    }
+
+    if (run_cv) {
+        # N-fold cross validation with equal-sized contiguous blocks
+        nfold <- as.integer(nfold)
+        fold_ids <- cut(seq_len(N), breaks = nfold, labels = FALSE)
+
+        # All combinations of penalty parameter and test fold ID
+        combs <- expand.grid(
+            lambda_ix = seq_along(lambda),
+            fold = seq_len(nfold)
+        )
+        ncomb <- dim(combs)[1]
+        if (ncomb < cores) {
+            message("NOTE: ", cores, " cores have been requested, but there ",
+                    "are only ", ncomb, " tasks to run. Only using ", ncomb,
+                    " cores.")
+            cores <- ncomb
+        }
+    }
+
+    if (!run_parallel) {
+        # Force Python initialization
+        reticulate::py_config()
+    } else {
+        # Create cluster
+        cl <- parallel::makeCluster(cores)
+        # These variables never change and will be needed for all Python
+        # function calls, so we'll export them now.
+        parallel::clusterExport(
+            cl = cl,
+            varlist = c("NX", "lambda", "Z", "fold_ids", "combs",
+                        "control", "py_path", ".fit_env"),
+            envir = environment()
+        )
+        # Initialize cluster
+        parallel::clusterEvalQ(cl, {
+            library(reticulate)
+
+            # Force Python initialization on workers
+            reticulate::py_config()
+
+            # Disable torch multithreading to prevent oversubscription
+            torch <- reticulate::import("torch", delay_load = FALSE)
+            torch$set_num_interop_threads(1L)
+            torch$set_num_threads(1L)
+
+            NULL
+        })
+
+        # Set up futures plan
+        future::plan(future::cluster, workers = cl)
+        on.exit({
+            future::plan(future::sequential)
+            parallel::stopCluster(cl)
+        }, add = TRUE)
+    }
+
+    if (run_cv) {
+        # Avoid setting up futures if no parallelization is requested
+        lfun <- ifelse(run_parallel, future.apply::future_lapply, lapply)
+        largs <- list(X = seq_len(ncomb))
+
+        progressr::with_progress({
+            # Add an extra step to reflect the final model fitting after CV
+            pbar <- progressr::progressor(along = seq_len(ncomb + 1L))
+
+            if (run_parallel) {
+                largs <- c(largs, list(future.seed = TRUE))
+            }
+
+            # Model selection via cross-validation
+            ll_fun <- function(i) {
+                # Since the folds are contiguous blocks, we can save resources
+                # by only passing the start/end points for the testing block
+                test_ix <- which(fold_ids == combs$fold[i])
+                ll <- cv_fun(
+                    lambda_ix = combs$lambda_ix[i],
+                    min_test_ix = min(test_ix),
+                    max_test_ix = max(test_ix)
+                )
+                pbar()
+                return(ll)
+            }
+            cv <- do.call(what = lfun, args = c(largs, list(FUN = ll_fun)))
+        })
+
+        # Sum likelihoods across folds
+        ll_sum <- tapply(
+            X = unlist(cv),
+            INDEX = list(combs$lambda_ix),
+            FUN = sum
+        )
+        cv_df <- as.data.frame(as.table(ll_sum))
+        names(cv_df) <- c("lambda_ix", "ll")
+        cv_df$lambda <- lambda[cv_df$lambda_ix]
+
+        # Optimal value of lambda
+        lambda_opt <- cv_df$lambda[which.max(cv_df$ll)]
+    } else {
+        # Only one lambda value passed, so no cross-validation needed
+        lambda_opt <- lambda
+        cv_df <- NULL
+    }
+
+    # Fit model using the optimal smoothing parameter
+    beta_hat <- fit_fun(lambda_opt)
+
+    res <- list(
+        nobs = N,
+        dim = d,
+        beta = beta_hat,
+        lambda = lambda_opt,
+        cv = cv_df,
+        smooth = FALSE,
+        disc_formula = disc_formula
+    )
+    class(res) <- "gamGaussianCopula"
+    return(res)
+}
+
+###############################################################################
+
+#' Internal function to fit a GAM Gaussian copula model
+#'
+#' @inheritParams fit_gamgc
+#' @param disc_formula Formula for discrete covariates.
+#' @param int_formula Formula for interactions between discrete covariates and
+#' the smooth covariate.
+.gam_fit <- function(FX,
+                     design,
+                     disc_formula,
+                     int_formula,
+                     lambda,
+                     K,
+                     nfold,
+                     cores,
+                     control) {
+    # Normal-transform pseudo-observations
+    NX <- stats::qnorm(FX)
+
+    # Location of Python files
+    py_path <- system.file("python", package = "DynCopula")
 
     if ("time" %in% colnames(design)) {
         # Sort by smooth covariate
@@ -129,7 +415,7 @@ fit_gamgc <- function(FX,
         if (is.unsorted(x)) {
             ord <- order(x)
             x <- x[ord]
-            FX <- FX[ord, , drop = FALSE]
+            NX <- NX[ord, , drop = FALSE]
             design <- design[ord, , drop = FALSE]
         }
     }
@@ -142,40 +428,17 @@ fit_gamgc <- function(FX,
         stop("The following variables are missing from 'design': ",
              paste(missing_vars, collapse = ", "))
     }
-    Z <- stats::model.matrix(disc_formula, design_disc)
     M <- stats::model.matrix(int_formula, design_disc)
+    Z <- stats::model.matrix(disc_formula, design_disc)
 
-    # If no smooth covariate is specified, fit a GLM and return
-    if (!"time" %in% colnames(design)) {
-        # Force Python initialization
-        reticulate::py_config()
-
-        # Load fit function
-        fit_fun <- reticulate::import_from_path(
-            module = "gaussian_fit",
-            path = py_path,
-            delay_load = FALSE
-        )$fit_gaussian_linear
-
-        # Fit model
-        beta_hat <- fit_fun(NX, Z, control)
-
-        # Return model
-        res <- list(
-            nobs = dim(FX)[1],
-            dim = dim(FX)[2],
-            beta = beta_hat,
-            smooth = FALSE,
-            formula = disc_formula
-        )
-        class(res) <- "gamGaussianCopula"
-        return(res)
-    }
+    N <- dim(NX)[1]
+    d <- dim(NX)[2]
+    L1 <- dim(M)[2]
+    L2 <- dim(Z)[2]
 
     # Whether parallelization is required. CV can be run with only one core,
     # but parallelization is over lambda so no parallelization is done if CV
     # is not going to be run.
-    cores <- as.integer(cores)
     run_cv <- (length(lambda) > 1)
     run_parallel <- (cores > 1L) && run_cv
 
@@ -202,7 +465,7 @@ fit_gamgc <- function(FX,
         # Load the module if it hasn't been loaded yet
         if (!exists("module", envir = .fit_env, inherits = FALSE)) {
             .fit_env$module <- reticulate::import_from_path(
-                module = "gaussian_fit",
+                module = "gam_fit",
                 path = py_path,
                 delay_load = FALSE
             )
@@ -222,7 +485,7 @@ fit_gamgc <- function(FX,
         # Load the module if it hasn't been loaded yet
         if (!exists("module", envir = .fit_env, inherits = FALSE)) {
             .fit_env$module <- reticulate::import_from_path(
-                module = "gaussian_fit",
+                module = "gam_fit",
                 path = py_path,
                 delay_load = FALSE
             )
@@ -243,10 +506,20 @@ fit_gamgc <- function(FX,
     if (run_cv) {
         # N-fold cross validation with equal-sized contiguous blocks
         nfold <- as.integer(nfold)
-        fold_ids <- cut(seq_along(x), breaks = nfold, labels = FALSE)
+        fold_ids <- cut(seq_len(N), breaks = nfold, labels = FALSE)
 
         # Grid search for smoothing parameters
-        lambda_grid <- expand.grid(rep(list(lambda), dim(M)[2]))
+        if (L2 > 1) {
+            # If there are discrete covariates besides the intercept, then
+            # we include an extra lambda for the L2 penalty. But if the only
+            # discrete covariate is the intercept, then the penalty would amount
+            # to a rescaling of the intercept, so we set the penalty to 0.
+            lambda_grid <- expand.grid(rep(list(lambda), L1 + 1L))
+        } else {
+            lambda_grid <- expand.grid(rep(list(lambda), L1))
+            lambda_grid <- cbind(rep(0, dim(lambda_grid)[1]), lambda_grid)
+            colnames(lambda_grid)[1] <- "Var0"
+        }
 
         # All combinations of smoothing parameter and test fold ID
         combs <- expand.grid(
@@ -272,8 +545,8 @@ fit_gamgc <- function(FX,
         # function calls, so we'll export them now.
         parallel::clusterExport(
             cl = cl,
-            varlist = c("NX", "B", "lambda_grid", "Z", "M", "fold_ids", "combs",
-                        "control", "py_path", ".fit_env"),
+            varlist = c("NX", "B", "lambda_grid", "Z", "M", "fold_ids",
+                        "combs", "control", "py_path", ".fit_env"),
             envir = environment()
         )
         # Initialize cluster
@@ -354,8 +627,8 @@ fit_gamgc <- function(FX,
     x <- x * dx + min_x
 
     res <- list(
-        nobs = dim(FX)[1],
-        dim = dim(FX)[2],
+        nobs = N,
+        dim = d,
         time = x,
         beta = beta_hat,
         lambda = lambda_opt,

@@ -8,6 +8,7 @@ def _glm_loss(
 	beta: torch.Tensor,
 	NX: torch.tensor,
 	Z: torch.Tensor,
+	lam: float,
 	dtype: torch.dtype
 ) -> torch.Tensor:
 	"""
@@ -21,6 +22,8 @@ def _glm_loss(
 	    Normal-transformed pseudo-observations. Shape `(N, d)`.
     Z : torch.Tensor
         Discrete design matrix. Shape `(N, L)`.
+    lam : float
+        L2 penalty for linear predictor.
 	dtype : torch.dtype
 	    Floating-point precision.
 
@@ -31,8 +34,10 @@ def _glm_loss(
 	"""
 	
 	eta = Z @ beta
+	# L2 penalty for linear predictor
+	pen_l2 = lam * torch.linalg.norm(beta)
 	nll = -torch.sum(_log_mvn_density(X = NX, V = eta, dtype = dtype))
-	return nll
+	return nll + pen_l2
 
 ###############################################################################
 
@@ -64,7 +69,7 @@ def _gam_loss(
 	S : torch.Tensor
 	    Penalty matrix. Shape `(K, K)`.
 	lam : torch.Tensor
-	    Smoothing parameters. Shape `(L1, )`.
+	    Smoothing parameters. Shape `(L1 + 1,)`.
 	dtype : torch.dtype
 	    Floating-point precision.
 
@@ -88,15 +93,18 @@ def _gam_loss(
 	# Negative log likelihood
 	nll = -torch.sum(_log_mvn_density(X = NX, V = eta, dtype = dtype))
 	
-	## Second order penalty
+	# L2 penalty for linear predictor
+	pen_l2 = lam[0] * torch.linalg.norm(alpha)
+	
+	# Roughness penalty for smooth predictor
 	# S @ beta[j]
 	Sbeta = torch.einsum('kl,jlp->jkp', S, betas)
 	# tr(beta[j]^T @ S @ beta[j]) = sum(beta[j] * Sbeta)
 	quad = (betas * Sbeta).sum(dim = (1, 2))
-	# 0.5 <lam, quad>
-	pen = 0.5 * (lam * quad).sum()
+	# 0.5 <lam[1:], quad>
+	pen_smooth = 0.5 * (lam[1:] * quad).sum()
 
-	return nll + pen
+	return nll + pen_l2 + pen_smooth
 
 ###############################################################################
 
