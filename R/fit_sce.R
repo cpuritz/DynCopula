@@ -67,7 +67,7 @@ fit_dyn_corr <- function(sce,
     design <- data.frame(
         "time" = pseudotimes
     )
-    res <- fit_gam_gc(
+    res <- fit_gamgc(
         FX = FX,
         design = design,
         lambda = lambda,

@@ -59,15 +59,15 @@
 #' }
 #'
 #' @export
-fit_gam_gc <- function(FX,
-                       design,
-                       disc_formula = ~1,
-                       int_formula = ~1,
-                       lambda = 10^(seq(-5, 5, length.out = 7)),
-                       K = 30,
-                       nfold = 5,
-                       cores = 1,
-                       control = list()) {
+fit_gamgc <- function(FX,
+                      design,
+                      disc_formula = ~1,
+                      int_formula = ~1,
+                      lambda = 10^(seq(-5, 5, length.out = 7)),
+                      K = 30,
+                      nfold = 5,
+                      cores = 1,
+                      control = list()) {
     # Basic argument checks
     assert_that(
         is.numeric(FX) && is.matrix(FX),
@@ -371,7 +371,7 @@ fit_gam_gc <- function(FX,
 
 ###############################################################################
 
-#' Print method for GAM Gaussian copula models
+#' Print method for class gamGaussianCopula
 #'
 #' @param x Object of class \code{gamGaussianCopula}.
 #' @param ... Additional arguments.

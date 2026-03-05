@@ -2,7 +2,7 @@
 % Please edit documentation in R/fit.R
 \name{print.gamGaussianCopula}
 \alias{print.gamGaussianCopula}
-\title{Print method for GAM Gaussian copula models}
+\title{Print method for class gamGaussianCopula}
 \usage{
 \method{print}{gamGaussianCopula}(x, ...)
 }
@@ -12,5 +12,5 @@
 \item{...}{Additional arguments.}
 }
 \description{
-Print method for GAM Gaussian copula models
+Print method for class gamGaussianCopula
 }
