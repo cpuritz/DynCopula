@@ -7,8 +7,9 @@
 .gam_fit(
   FX,
   design,
-  disc_formula,
+  lin_formula,
   int_formula,
+  smooth_name,
   lambda,
   K,
   nfold,
@@ -19,15 +20,16 @@
 \arguments{
 \item{FX}{Matrix of pseudo-observations.}
 
-\item{design}{Design matrix. Rows correspond to rows in \code{FX}. A single
-smooth covariate can be included in a column named \code{"time"}. All
-other columns are treated as discrete covariates. If no covariates should be
-included in the model, pass a \code{data.frame} with a column of all ones.}
+\item{design}{Design matrix. Rows correspond to rows in \code{FX}. If no
+covariates should be included in the model, pass a \code{data.frame} with a
+column of all ones.}
 
-\item{disc_formula}{Formula for discrete covariates.}
+\item{lin_formula}{Formula for linear covariates.}
 
-\item{int_formula}{Formula for interactions between discrete covariates and
+\item{int_formula}{Formula for interactions between linear covariates and
 the smooth covariate.}
+
+\item{smooth_name}{Name of the smooth covariate.}
 
 \item{lambda}{Vector of penalty parameters to test. Default is
 \code{10^(seq(-5, 5, length.out = 7))}.}

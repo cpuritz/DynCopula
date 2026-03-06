@@ -35,23 +35,23 @@ predict.gamGaussianCopula <- function(object,
 
     type <- match.arg(type)
 
-    all_vars <- c(all.vars(object$disc_formula), all.vars(object$int_formula))
-    design_disc <- design_new[, colnames(design_new) != "time", drop = FALSE]
-    missing_vars <- setdiff(all_vars, colnames(design_disc))
+    smooth_name <- object$smooth_name
+    all_vars <- c(all.vars(object$lin_formula), all.vars(object$int_formula))
+    missing_vars <- setdiff(all_vars, colnames(design_new))
     if (length(missing_vars) > 0L) {
         stop("The following columns are missing in the design matrix: ",
              paste(missing_vars, collapse = ", "))
     }
-    Z_new <- stats::model.matrix(object$disc_formula, design_disc)
+    Z_new <- stats::model.matrix(object$lin_formula, design_new)
 
     # Construct matrix of estimated calibration coefficients
     if (!object$smooth) {
         Hhat <- Z_new %*% object$beta
     } else {
-        M_new <- stats::model.matrix(object$int_formula, design_disc)
+        M_new <- stats::model.matrix(object$int_formula, design_new)
 
         # Extract new smooth covariate values
-        x_new <- design_new[["time"]]
+        x_new <- design_new[[smooth_name]]
 
         # Standard scale smooth covariate on original scale
         min_x <- min(object$time)

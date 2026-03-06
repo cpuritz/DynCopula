@@ -2,7 +2,7 @@
 % Please edit documentation in R/parse.R
 \name{.parse_formula}
 \alias{.parse_formula}
-\title{Parse a formula into discrete and smooth parts}
+\title{Parse a formula into linear and smooth parts}
 \usage{
 .parse_formula(formula)
 }
@@ -12,10 +12,12 @@
 \value{
 A list with the following components:
 \itemize{
-  \item disc Formula for discrete covariates.
-  \item int Formula for interactions with smooth covariate.
+  \item linear Formula for linear covariates.
+  \item smooth_linear_int Formula for interactions between linear covariates
+  and the smooth covariate.
+  \item smooth_name The name of the smooth covariate.
 }
 }
 \description{
-Parse a formula into discrete and smooth parts. Used internally.
+Parse a formula into linear and smooth parts. Used internally.
 }

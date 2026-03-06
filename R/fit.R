@@ -5,10 +5,9 @@
 #' @description Fit a generalized additive model for a Gaussian copula.
 #'
 #' @param FX Matrix of pseudo-observations.
-#' @param design Design matrix. Rows correspond to rows in \code{FX}. A single
-#' smooth covariate can be included in a column named \code{"time"}. All
-#' other columns are treated as discrete covariates. If no covariates should be
-#' included in the model, pass a \code{data.frame} with a column of all ones.
+#' @param design Design matrix. Rows correspond to rows in \code{FX}. If no
+#' covariates should be included in the model, pass a \code{data.frame} with a
+#' column of all ones.
 #' @param formula Formula for covariates.
 #' @param lambda Vector of penalty parameters to test. Default is
 #' \code{10^(seq(-5, 5, length.out = 7))}.
@@ -18,19 +17,19 @@
 #' @param control A \code{list} of control parameters for optimization.
 #'
 #' @details The formula can include a single smooth covariate and any number of
-#' discrete covariates. Specify the smooth covariate by \code{s(t)}, replacing
+#' linear covariates. Specify the smooth covariate by \code{s(t)}, replacing
 #' \code{t} with the name of the smooth covariate in the design matrix. If
-#' interaction terms between discrete covariates and the smooth covariate are
+#' interaction terms between linear covariates and the smooth covariate are
 #' included, a baseline (intercept) smooth function will be included in the
 #' model.
 #'
 #' If a smooth covariate is included in the formula, it is modeled
-#' using penalized splines with a roughness penalty. The discrete covariates are
+#' using penalized splines with a roughness penalty. The linear covariates are
 #' penalized by an L2 penalty. The penalty parameters are selected via
 #' cross-validation. A separate penalty parameter is used to for each term
 #' which includes the smooth covariate. This includes a baseline smooth
 #' function as well as any interactions between the smooth covariate and
-#' discrete covariates.
+#' linear covariates.
 #'
 #' Optimization is performed using L-BFGS. The \code{control} argument
 #' is a list that supplies control parameters for optimization. The following
@@ -58,20 +57,21 @@
 #'   \item \code{lambda}: The optimal smoothing parameter.
 #'   \item \code{cv}: Cross-validation results.
 #'   \item \code{B}: Spline basis matrix.
-#'   \item \code{smooth}: Whether a smooth covariate was modeled.
-#'   \item \code{disc_formula}: Formula for discrete covariates.
+#'   \item \code{smooth_name}: The name of the smooth covariate.
+#'   \item \code{lin_formula}: Formula for linear covariates.
 #'   \item \code{int_formula}: Formula for interactions between the smooth
-#'   covariate and discrete covariates.
+#'   covariate and linear covariates.
 #' }
 #'
 #' @examples
 #' \dontrun{
 #' library(DynCopula)
+#' library(copula)
 #'
 #' N <- 1000
 #' # Smooth covariate
 #' t <- sort(runif(N))
-#' # Discrete covariates
+#' # Linear covariates
 #' x1 <- c(rep("a", N / 2), rep("b", N / 2))
 #' x2 <- rep(seq(5), N / 5)
 #' design <- data.frame(time = t, x1 = x1, x2 = x2)
@@ -85,16 +85,16 @@
 #' }
 #' # Sample from copula
 #' U <- t(sapply(seq(N), function(i) {
-#'     cop <- copula::normalCopula(param = rho(t[i], x1[i], x2[i]), dim = 2, dispstr = "un")
-#'     return(copula::rCopula(1L, cop))
+#'     cop <- normalCopula(param = rho(t[i], x1[i], x2[i]), dim = 2, dispstr = "un")
+#'     return(rCopula(1L, cop))
 #' }))
 #'
-#' # Smooth covariate with no discrete covariates
+#' # Smooth covariate with no linear covariates
 #' gc1 <- fit_gamgc(U, design)
 #' rho_pred1 <- predict(gc1, U, design)
 #'
-#' # Smooth covariate with intercepts dependent on discrete covariates
-#' gc2 <- fit_gamgc(U, design, disc_formula = ~x1 + x2)
+#' # Smooth covariate with intercepts dependent on linear covariates
+#' gc2 <- fit_gamgc(U, design, lin_formula = ~x1 + x2)
 #' rho_pred2 <- predict(gc1, U, design)
 #' }
 #'
@@ -124,8 +124,9 @@ fit_gamgc <- function(FX,
 
     # Parse formula
     formulas <- .parse_formula(formula)
-    disc_formula <- formulas$disc
-    int_formula <- formulas$int
+    lin_formula <- formulas$linear
+    int_formula <- formulas$smooth_linear_int
+    smooth_name <- formulas$smooth_name
 
     # Default control parameters
     defaults <- list(
@@ -165,7 +166,7 @@ fit_gamgc <- function(FX,
         .glm_fit(
             FX = FX,
             design = design,
-            disc_formula = disc_formula,
+            lin_formula = lin_formula,
             lambda = lambda,
             nfold = nfold,
             cores = cores,
@@ -175,8 +176,9 @@ fit_gamgc <- function(FX,
         .gam_fit(
             FX = FX,
             design = design,
-            disc_formula = disc_formula,
+            lin_formula = lin_formula,
             int_formula = int_formula,
+            smooth_name = smooth_name,
             lambda = lambda,
             K = K,
             nfold = nfold,
@@ -191,10 +193,10 @@ fit_gamgc <- function(FX,
 #' Internal function to fit a GLM Gaussian copula model
 #'
 #' @inheritParams fit_gamgc
-#' @param disc_formula Formula for discrete covariates.
+#' @param lin_formula Formula for linear covariates.
 .glm_fit <- function(FX,
                      design,
-                     disc_formula,
+                     lin_formula,
                      lambda,
                      nfold,
                      cores,
@@ -205,13 +207,13 @@ fit_gamgc <- function(FX,
     # Location of Python files
     py_path <- system.file("python", package = "DynCopula")
 
-    # Construct discrete design matrix
-    missing_vars <- setdiff(all.vars(disc_formula), colnames(design))
+    # Construct linear design matrix
+    missing_vars <- setdiff(all.vars(lin_formula), colnames(design))
     if (length(missing_vars) > 0L) {
         stop("The following variables are missing from 'design': ",
              paste(missing_vars, collapse = ", "))
     }
-    Z <- stats::model.matrix(disc_formula, design)
+    Z <- stats::model.matrix(lin_formula, design)
 
     N <- dim(NX)[1]
     d <- dim(NX)[2]
@@ -379,8 +381,7 @@ fit_gamgc <- function(FX,
         beta = beta_hat,
         lambda = lambda_opt,
         cv = cv_df,
-        smooth = FALSE,
-        disc_formula = disc_formula
+        lin_formula = lin_formula
     )
     class(res) <- "gamGaussianCopula"
     return(res)
@@ -391,13 +392,15 @@ fit_gamgc <- function(FX,
 #' Internal function to fit a GAM Gaussian copula model
 #'
 #' @inheritParams fit_gamgc
-#' @param disc_formula Formula for discrete covariates.
-#' @param int_formula Formula for interactions between discrete covariates and
+#' @param lin_formula Formula for linear covariates.
+#' @param int_formula Formula for interactions between linear covariates and
 #' the smooth covariate.
+#' @param smooth_name Name of the smooth covariate.
 .gam_fit <- function(FX,
                      design,
-                     disc_formula,
+                     lin_formula,
                      int_formula,
+                     smooth_name,
                      lambda,
                      K,
                      nfold,
@@ -409,27 +412,24 @@ fit_gamgc <- function(FX,
     # Location of Python files
     py_path <- system.file("python", package = "DynCopula")
 
-    if ("time" %in% colnames(design)) {
-        # Sort by smooth covariate
-        x <- design[["time"]]
-        if (is.unsorted(x)) {
-            ord <- order(x)
-            x <- x[ord]
-            NX <- NX[ord, , drop = FALSE]
-            design <- design[ord, , drop = FALSE]
-        }
+    # Sort by smooth covariate
+    x <- design[[smooth_name]]
+    if (is.unsorted(x)) {
+        ord <- order(x)
+        x <- x[ord]
+        NX <- NX[ord, , drop = FALSE]
+        design <- design[ord, , drop = FALSE]
     }
 
-    # Construct discrete design matrix
-    design_disc <- design[, colnames(design) != "time", drop = FALSE]
-    all_vars <- c(all.vars(disc_formula), all.vars(int_formula))
-    missing_vars <- setdiff(all_vars, colnames(design_disc))
+    # Construct linear design matrix
+    all_vars <- c(all.vars(lin_formula), all.vars(int_formula))
+    missing_vars <- setdiff(all_vars, colnames(design))
     if (length(missing_vars) > 0L) {
         stop("The following variables are missing from 'design': ",
              paste(missing_vars, collapse = ", "))
     }
-    M <- stats::model.matrix(int_formula, design_disc)
-    Z <- stats::model.matrix(disc_formula, design_disc)
+    M <- stats::model.matrix(int_formula, design)
+    Z <- stats::model.matrix(lin_formula, design)
 
     N <- dim(NX)[1]
     d <- dim(NX)[2]
@@ -510,9 +510,9 @@ fit_gamgc <- function(FX,
 
         # Grid search for smoothing parameters
         if (L2 > 1) {
-            # If there are discrete covariates besides the intercept, then
+            # If there are linear covariates besides the intercept, then
             # we include an extra lambda for the L2 penalty. But if the only
-            # discrete covariate is the intercept, then the penalty would amount
+            # linear covariate is the intercept, then the penalty would amount
             # to a rescaling of the intercept, so we set the penalty to 0.
             lambda_grid <- expand.grid(rep(list(lambda), L1 + 1L))
         } else {
@@ -634,8 +634,8 @@ fit_gamgc <- function(FX,
         lambda = lambda_opt,
         cv = cv_df,
         B = B,
-        smooth = TRUE,
-        disc_formula = disc_formula,
+        smooth_name = smooth_name,
+        lin_formula = lin_formula,
         int_formula = int_formula
     )
     class(res) <- "gamGaussianCopula"
