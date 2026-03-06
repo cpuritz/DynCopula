@@ -6,6 +6,7 @@
 \usage{
 fit_dyn_corr(
   sce,
+  formula,
   lambda = 10^(seq(-5, 5, length.out = 7)),
   K = 30,
   nfold = 5,
@@ -15,7 +16,10 @@ fit_dyn_corr(
 \arguments{
 \item{sce}{A \code{SingleCellExperiment}.}
 
-\item{lambda}{Vector of smoothing parameters to test. Default is
+\item{formula}{Formula for covariates. Variable names should be column
+metadata names.}
+
+\item{lambda}{Vector of penalty parameters to test. Default is
 \code{10^(seq(-5, 5, length.out = 7))}.}
 
 \item{K}{Dimension of the spline basis matrix. Default is \code{30}.}
@@ -26,23 +30,31 @@ fit_dyn_corr(
 }
 \value{
 The same \code{SingleCellExperiment} as was passed as input, but
-with the metadata entry \code{dyn_corr} updated to include the following
-elements:
-\itemize{
-  \item \code{rho}: Matrix of estimated correlation coefficients.
-  \item \code{eta}: Matrix of estimated calibrations coefficients.
-  \item \code{cv}: Cross-validation results.
-}
+with the metadata entry \code{dyn_corr} updated to include results of the
+model fitting.
 }
 \description{
 Fit a dynamic Gaussian copula to scRNA-seq data using local
 likelihood.
 }
 \details{
-Cross-validation is used to select the value of \code{lambda}.
-Optimization is performed using L-BFGS. The \code{control} argument is a list
-that supplies control parameters for optimization. The following parameters
-can be supplied:
+The formula can include a single smooth covariate and any number of
+linear covariates. Specify the smooth covariate by \code{s(t)}, replacing
+\code{t} with the name of the smooth covariate. If interaction terms between
+linear covariates and the smooth covariate are included, a baseline
+(intercept) smooth function will be included in the model.
+
+If a smooth covariate is included in the formula, it is modeled
+using penalized splines with a roughness penalty. The linear covariates are
+penalized by an L2 penalty. The penalty parameters are selected via
+cross-validation. A separate penalty parameter is used to for each term
+which includes the smooth covariate. This includes a baseline smooth
+function as well as any interactions between the smooth covariate and
+linear covariates.
+
+Optimization is performed using L-BFGS. The \code{control} argument
+is a list that supplies control parameters for optimization. The following
+parameters can be supplied:
 \itemize{
   \item \code{max_itr} Maximum number of iterations. Default is \code{100}.
   \item \code{history_size} History size. Default is \code{30}.
