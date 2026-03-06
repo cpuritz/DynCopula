@@ -49,6 +49,7 @@ A \code{gamGaussianCopula} object with the following components:
   \item \code{lin_formula}: Formula for linear covariates.
   \item \code{int_formula}: Formula for interactions between the smooth
   covariate and linear covariates.
+  \item \code{colnames}: Column names of the pseudo-observation matrix.
 }
 }
 \description{
