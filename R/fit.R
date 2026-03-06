@@ -61,6 +61,7 @@
 #'   \item \code{lin_formula}: Formula for linear covariates.
 #'   \item \code{int_formula}: Formula for interactions between the smooth
 #'   covariate and linear covariates.
+#'   \item \code{colnames}: Column names of the pseudo-observation matrix.
 #' }
 #'
 #' @examples
@@ -375,13 +376,21 @@ fit_gamgc <- function(FX,
     # Fit model using the optimal smoothing parameter
     beta_hat <- fit_fun(lambda_opt)
 
+    # Save column names
+    if (is.null(colnames(FX))) {
+        cnames <- as.character(seq_len(dim(FX)[2]))
+    } else {
+        cnames <- colnames(FX)
+    }
+
     res <- list(
         nobs = N,
         dim = d,
         beta = beta_hat,
         lambda = lambda_opt,
         cv = cv_df,
-        lin_formula = lin_formula
+        lin_formula = lin_formula,
+        colnames = cnames
     )
     class(res) <- "gamGaussianCopula"
     return(res)
@@ -626,6 +635,13 @@ fit_gamgc <- function(FX,
     # Rescale covariates back to their original scale
     x <- x * dx + min_x
 
+    # Save column names
+    if (is.null(colnames(FX))) {
+        cnames <- as.character(seq_len(dim(FX)[2]))
+    } else {
+        cnames <- colnames(FX)
+    }
+
     res <- list(
         nobs = N,
         dim = d,
@@ -636,7 +652,8 @@ fit_gamgc <- function(FX,
         B = B,
         smooth_name = smooth_name,
         lin_formula = lin_formula,
-        int_formula = int_formula
+        int_formula = int_formula,
+        colnames = colnames(FX)
     )
     class(res) <- "gamGaussianCopula"
     return(res)

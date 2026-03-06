@@ -102,8 +102,9 @@ predict.gamGaussianCopula <- function(object,
     }
 
     # Add column labels
-    colnames(Rhat) <- apply(utils::combn(seq_len(d), 2), 2, function(x) {
-        paste0("rho", paste(x, collapse = '_'))
+    cnames <- object$colnames
+    colnames(Rhat) <- apply(t(utils::combn(seq_len(d), 2)), 1, function(x) {
+        paste(cnames[x[1]], cnames[x[2]], sep = '_')
     })
 
     return(Rhat)
