@@ -28,3 +28,41 @@ A matrix of coefficients.
 Predict coefficients for new data from a previously fit GAM
 Gaussian copula model.
 }
+\examples{
+\dontrun{
+library(DynCopula)
+library(copula)
+set.seed(0)
+
+N <- 1000
+# Smooth covariate
+t <- runif(N)
+# Linear covariates
+x1 <- sample(c("a", "b"), N, replace = TRUE)
+x2 <- sample(seq(5), N, replace = TRUE)
+# Design matrix
+design <- data.frame(t = t, x1 = x1, x2 = x2)
+
+# Covariate-dependent correlation function
+rho <- function(t, x1, x2) {
+    0.7 * cos(4 * pi * t) + (x1 == "b") * 0.1 - 0.01 * x2
+}
+# Sample from copula
+U <- t(sapply(seq(N), function(i) {
+    rho_i <- rho(t[i], x1[i], x2[i])
+    cop <- normalCopula(param = rho_i, dim = 2, dispstr = "un")
+    return(rCopula(1L, cop))
+}))
+
+# Fit model
+gc <- fit_gamgc(U, design, formula = ~x1 + x2 + s(t))
+
+# Predict correlation coefficients for original data
+pred <- predict(
+    object = gc,
+    FX_new = U,
+    design_new = design
+)
+}
+
+}

@@ -73,6 +73,7 @@
 #' \dontrun{
 #' library(DynCopula)
 #' library(copula)
+#' set.seed(0)
 #'
 #' N <- 1000
 #' # Smooth covariate

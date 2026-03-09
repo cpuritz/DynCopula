@@ -97,6 +97,7 @@ Any control parameters not specified are replaced by their default values.
 \dontrun{
 library(DynCopula)
 library(copula)
+set.seed(0)
 
 N <- 1000
 # Smooth covariate
