@@ -19,26 +19,26 @@ sample_cells <- function(sce,
                          interpolation = c("linear", "spline")) {
     assert_that(
         methods::is(sce, "SingleCellExperiment"),
-        "dyn_corr" %in% names(metadata(sce)),
-        all(c("margins", "rho") %in% names(metadata(sce)$dyn_corr)),
+        "copula_fit" %in% names(metadata(sce)),
+        all(c("margins", "rho") %in% names(metadata(sce)$copula_fit)),
         is.numeric(new_times)
     )
     interpolation <- match.arg(interpolation)
 
-    if (!metadata(sce)$dyn_corr$full_margins) {
+    if (!metadata(sce)$copula_fit$full_margins) {
         stop("Cells can't be sampled since the margins were not saved. ",
              "Rerun 'fit_margins' with 'save = TRUE'.")
     }
 
-    dyn_corr <- metadata(sce)$dyn_corr
-    genes <- dyn_corr$features
-    time_col <- dyn_corr$time_col
+    copula_fit <- metadata(sce)$copula_fit
+    genes <- copula_fit$features
+    time_col <- copula_fit$time_col
 
-    if (dyn_corr$assay == "logcounts") {
+    if (copula_fit$assay == "logcounts") {
         stop("NOT IMPLEMENTED YET")
     }
 
-    counts <- SummarizedExperiment::assay(sce, dyn_corr$assay)
+    counts <- SummarizedExperiment::assay(sce, copula_fit$assay)
     counts <- Matrix::t(counts[genes, ])
 
     # Interpolate calibration coefficients at new times
@@ -58,7 +58,7 @@ sample_cells <- function(sce,
             )$y
         }
     }
-    eta_int <- apply(dyn_corr$eta, 2, interp_fun)
+    eta_int <- apply(copula_fit$eta, 2, interp_fun)
 
     message("Sampling copula")
     # Each step is very quick, but we generally expect new_times to be large.
@@ -93,7 +93,7 @@ sample_cells <- function(sce,
         counts_sim <- lapply(seq_along(genes), function(i) {
             mdat <- data.frame(counts[, i], pseudotimes)
             names(mdat) <- c("x", time_col)
-            mfun <- dyn_corr$margins[[i]]
+            mfun <- copula_fit$margins[[i]]
 
             # Get model parameters at new pseudotimes
             par_pred <- gamlss::predictAll(

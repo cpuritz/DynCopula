@@ -7,7 +7,6 @@
 setup(
   sce,
   assay = c("counts", "logcounts"),
-  time_col,
   features = rownames(sce),
   cores = 1L
 )
@@ -15,9 +14,8 @@ setup(
 \arguments{
 \item{sce}{A \code{SingleCellExperiment}.}
 
-\item{assay}{Which assay to use. Either \code{"counts"} or \code{"logcounts"}.}
-
-\item{time_col}{The name of the \code{colData} column containing pseudotimes.}
+\item{assay}{Which assay to use. Either \code{"counts"} or
+\code{"logcounts"}.}
 
 \item{features}{Which genes to model. Default is all genes.}
 
@@ -26,7 +24,7 @@ is \code{1L}.}
 }
 \value{
 The same \code{SingleCellExperiment} as was passed as input, but
-modified to include a named metadata entry \code{dyn_corr} that is used to
+modified to include a named metadata entry \code{copula_fit} that is used to
 store all information related to this analysis.
 }
 \description{

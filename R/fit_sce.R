@@ -46,33 +46,34 @@
 #' Any control parameters not specified are replaced by their default values.
 #'
 #' @returns The same \code{SingleCellExperiment} as was passed as input, but
-#' with the metadata entry \code{dyn_corr} updated to include results of the
+#' with the metadata entry \code{copula_fit} updated to include results of the
 #' model fitting.
 #'
 #' @export
-fit_dyn_corr <- function(sce,
-                         formula,
-                         lambda = 10^(seq(-5, 5, length.out = 7)),
-                         K = 30,
-                         nfold = 5,
-                         control = list()) {
+fit_gamgc_sce <- function(sce,
+                          formula,
+                          lambda = 10^(seq(-5, 5, length.out = 7)),
+                          K = 30,
+                          nfold = 5,
+                          control = list()) {
     # Check argument not validated by fit_gamgc
     assert_that(
         methods::is(sce, "SingleCellExperiment"),
-        "dyn_corr" %in% names(metadata(sce))
+        "copula_fit" %in% names(metadata(sce))
     )
 
-    dyn_corr <- metadata(sce)$dyn_corr
-    assert_that("FX" %in% names(dyn_corr))
-    assay <- dyn_corr$assay
+    copula_fit <- metadata(sce)$copula_fit
+    assert_that("FX" %in% names(copula_fit))
+    assay <- copula_fit$assay
     design <- as.data.frame(SummarizedExperiment::colData(sce))
 
     if (assay == "counts") {
+        assert_that(all(c("FXm", "V") %in% names(copula_fit)))
         # Construct jittered pseudo-observations
-        FX <- dyn_corr$FXm + (dyn_corr$FX - dyn_corr$FXm) * dyn_corr$V
+        FX <- copula_fit$FXm + (copula_fit$FX - copula_fit$FXm) * copula_fit$V
     } else {
         # Already jittered for logcounts
-        FX <- dyn_corr$FX
+        FX <- copula_fit$FX
     }
 
     # Estimate copula parameters
@@ -83,7 +84,7 @@ fit_dyn_corr <- function(sce,
         lambda = lambda,
         K = K,
         nfold = nfold,
-        cores = dyn_corr$cores,
+        cores = copula_fit$cores,
         control = control
     )
 
@@ -91,11 +92,11 @@ fit_dyn_corr <- function(sce,
     colnames(res$rho) <- sapply(colnames(res$rho), function(x) {
         x2 <- unlist(strsplit(x, split = "rho"))[2]
         ix <- as.numeric(unlist(strsplit(x2, split = '_')))
-        return(paste(dyn_corr$features[ix], collapse = '_'))
+        return(paste(copula_fit$features[ix], collapse = '_'))
     })
 
     # Save results in metadata
-    metadata(sce)$dyn_corr <- c(metadata(sce)$dyn_corr, res)
+    metadata(sce)$copula_fit <- c(metadata(sce)$copula_fit, res)
 
     return(sce)
 }

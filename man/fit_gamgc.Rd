@@ -46,6 +46,11 @@ A \code{gamGaussianCopula} object with the following components:
   \item \code{cv}: Cross-validation results.
   \item \code{B}: Spline basis matrix.
   \item \code{smooth_name}: The name of the smooth covariate.
+  \item \code{Z_names}: Column names of the design matrix for linear
+  covariates.
+  \item \code{M_names}: Column names of the design matrix for interactions
+  between the smooth
+  covariate and linear covariates.
   \item \code{lin_formula}: Formula for linear covariates.
   \item \code{int_formula}: Formula for interactions between the smooth
   covariate and linear covariates.
@@ -95,32 +100,32 @@ library(copula)
 
 N <- 1000
 # Smooth covariate
-t <- sort(runif(N))
+t <- runif(N)
 # Linear covariates
-x1 <- c(rep("a", N / 2), rep("b", N / 2))
-x2 <- rep(seq(5), N / 5)
-design <- data.frame(time = t, x1 = x1, x2 = x2)
+x1 <- sample(c("a", "b"), N, replace = TRUE)
+x2 <- sample(seq(5), N, replace = TRUE)
+# Design matrix
+design <- data.frame(t = t, x1 = x1, x2 = x2)
 
-# Covariate-dependent correlation
+# Covariate-dependent correlation function
 rho <- function(t, x1, x2) {
-    rho_s <- 0.7 * cos(4 * pi * t)
-    rho_x1 <- (x1 == "b") * 0.1
-    rho_x2 <- -0.01 * x2
-    return(rho_s + rho_x1 + rho_x2)
+    0.7 * cos(4 * pi * t) + (x1 == "b") * 0.1 - 0.01 * x2
 }
 # Sample from copula
 U <- t(sapply(seq(N), function(i) {
-    cop <- normalCopula(param = rho(t[i], x1[i], x2[i]), dim = 2, dispstr = "un")
+    rho_i <- rho(t[i], x1[i], x2[i])
+    cop <- normalCopula(param = rho_i, dim = 2, dispstr = "un")
     return(rCopula(1L, cop))
 }))
 
-# Smooth covariate with no linear covariates
-gc1 <- fit_gamgc(U, design)
-rho_pred1 <- predict(gc1, U, design)
-
-# Smooth covariate with intercepts dependent on linear covariates
-gc2 <- fit_gamgc(U, design, lin_formula = ~x1 + x2)
-rho_pred2 <- predict(gc1, U, design)
+# Fit with no covariates
+gc1 <- fit_gamgc(U, design = data.frame(rep(1, N)), formula = ~1)
+# Fit with a smooth covariate
+gc2 <- fit_gamgc(U, design, formula = ~s(t))
+# Fit with a smooth covariate and two linear covariates
+gc3 <- fit_gamgc(U, design, formula = ~x1 + x2 + s(t))
+# Fit with a smooth covariate, two linear covariates, and an interaction term
+gc4 <- fit_gamgc(U, design, formula = ~x1 + x2*s(t))
 }
 
 }

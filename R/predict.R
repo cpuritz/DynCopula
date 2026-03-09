@@ -34,22 +34,43 @@ predict.gamGaussianCopula <- function(object,
     )
 
     type <- match.arg(type)
+    N <- dim(FX_new)[1]
 
-    smooth_name <- object$smooth_name
+    # Make sure new design matrix has necessary columns
     all_vars <- c(all.vars(object$lin_formula), all.vars(object$int_formula))
     missing_vars <- setdiff(all_vars, colnames(design_new))
     if (length(missing_vars) > 0L) {
         stop("The following columns are missing in the design matrix: ",
              paste(missing_vars, collapse = ", "))
     }
+
+    # Pad design matrices in case new design matrices are missing factors
+    # present in the original design matrix
     Z_new <- stats::model.matrix(object$lin_formula, design_new)
+    Z_col_miss <- setdiff(object$Z_names, colnames(Z_new))
+    if (length(Z_col_miss) > 0L) {
+        nzn <- dim(Z_new)[2]
+        Z_new <- cbind(Z_new, matrix(0, nrow = N, ncol = length(Z_col_miss)))
+        colnames(Z_new)[(nzn + 1):(nzn + length(Z_col_miss))] <- Z_col_miss
+        Z_new <- Z_new[, object$Z_names]
+    }
+
+    smooth_name <- object$smooth_name
+    if (!is.null(smooth_name)) {
+        M_new <- stats::model.matrix(object$int_formula, design_new)
+        M_col_miss <- setdiff(object$M_names, colnames(M_new))
+        if (length(M_col_miss) > 0L) {
+            nmn <- dim(M_new)[2]
+            M_new <- cbind(M_new, matrix(0, nrow = N, ncol = length(M_col_miss)))
+            colnames(M_new)[(nmn + 1):(nmn + length(M_col_miss))] <- M_col_miss
+            M_new <- M_new[, object$M_names]
+        }
+    }
 
     # Construct matrix of estimated calibration coefficients
-    if (!object$smooth) {
+    if (is.null(smooth_name)) {
         Hhat <- Z_new %*% object$beta
     } else {
-        M_new <- stats::model.matrix(object$int_formula, design_new)
-
         # Extract new smooth covariate values
         x_new <- design_new[[smooth_name]]
 
