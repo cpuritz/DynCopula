@@ -10,6 +10,7 @@ fit_gamgc_sce(
   lambda = 10^(seq(-5, 5, length.out = 7)),
   K = 30,
   nfold = 5,
+  cores = 1,
   control = list()
 )
 }
@@ -25,6 +26,8 @@ metadata names.}
 \item{K}{Dimension of the spline basis matrix. Default is \code{30}.}
 
 \item{nfold}{Number of folds for cross-validation. Default is \code{5}.}
+
+\item{cores}{Number of cores to use. Default is \code{1}.}
 
 \item{control}{A \code{list} of control parameters for optimization.}
 }

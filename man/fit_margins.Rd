@@ -6,60 +6,47 @@
 \usage{
 fit_margins(
   sce,
-  quick = TRUE,
+  features = rownames(sce),
   family = c("NBI", "ZINBI"),
   mu_formula,
-  sigma_formula
+  sigma_formula,
+  nu_formula,
+  cores = 1,
+  save = TRUE
 )
 }
 \arguments{
 \item{sce}{A \code{SingleCellExperiment}.}
 
-\item{quick}{Whether to perform cross-validated bandwidth selection (which is
-expensive but more accurate) or use a quick plug-in estimator. Only used if
-\code{assay = "logcounts"}. Default is \code{TRUE}.}
+\item{features}{Which genes to model. Default is all genes.}
 
-\item{family}{A character vector specifying families to use. Only used
-if \code{assay = "counts"}. Options are \code{"NBI"} (negative binomial) and
-\code{"ZINBI"} (zero-inflated negative binomial).}
+\item{family}{The parametric family to use. Options are \code{"NBI"} and
+\code{"ZINBI"}.}
 
-\item{mu_formula}{A character vector specifying formulas for the mean
-parameter. Only used if \code{assay = "counts"}.}
+\item{mu_formula}{Formula for mean vector.}
 
-\item{sigma_formula}{A character vector specifying formulas for the
-dispersion parameter. Only used if \code{assay = "counts"}.}
+\item{sigma_formula}{Formula for dispersion parameter.}
+
+\item{nu_formula}{Formula for zero proportion parameter.}
+
+\item{cores}{Number of cores to use. Default is \code{1}.}
+
+\item{save}{Whether to save all model information. Default is \code{TRUE}.}
 }
 \value{
 The same \code{SingleCellExperiment} as was passed as input, but
-with the metadata entry \code{dyn_corr} updated to include necessary
-information about the margins.
+modified to include a named metadata entry \code{copula_fit} that is used to
+store all information related to this analysis.
 }
 \description{
-Fit marginal distributions to transcript counts for each gene.
-If the assay to model is \code{"counts"}, parametric models are fit. If the
-assay to model is \code{"logcounts"}, nonparametric models are fit.
+Fit GAMLSS models to transcript counts for each gene.
 }
 \details{
-If \code{assay = "logcounts"}, kernel-smoothed hurdle models are
-fit. The only modeling decision to make is whether to perform cross-validated
-bandwidth selection for the margins. This approach is more accurate than
-using the plug-in bandwidth selector, but is much more expensive. See the
-\code{bwmethod} argument of \link[np]{npcdistbw} for details.
+Variable names in the formulas should be column metadata names.
 
-If \code{assay = "counts"}, parametric models are fit. Multiple families and
-formulas can be passed, in which case the best fitting model is chosen across
-all combinations by minimizing AIC. Formulas should be written as a function
-of the name of the pseudotime column (what was passed as the argument
-\code{time_col} to \link[DynCopula]{setup}). Only the righthand side of the
-formula should be passed. For example, if the pseudotime column is named
-\code{"pseudotime"}:
-\itemize{
-  \item \code{mu_formula = "1"}: mean is constant.
-  \item \code{mu_formula = "pseudotime"}: mean varies linearly with
-  pseudotime.
-  \item \code{mu_formula = "gamlss::pb(pseudotime)"}: mean varies through a
-  P-spline with pseudotime. Any spline functions need to be explicitly
-  scoped (e.g., \code{gamlss::pb} instead of \code{pb}).
-}
-For ZINBI models, the zero probability parameter is assumed to be constant.
+The argument \code{save} should be set to \code{TRUE} if you plan on sampling
+cells from the fitted model. If not, setting it to \code{FALSE} will save a
+large amount of memory. If it is set to \code{FALSE} and you later decide you
+want to sample cells, you will need to refit the margins with
+\code{save = TRUE}.
 }

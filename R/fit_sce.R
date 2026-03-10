@@ -12,6 +12,7 @@
 #' \code{10^(seq(-5, 5, length.out = 7))}.
 #' @param K Dimension of the spline basis matrix. Default is \code{30}.
 #' @param nfold Number of folds for cross-validation. Default is \code{5}.
+#' @param cores Number of cores to use. Default is \code{1}.
 #' @param control A \code{list} of control parameters for optimization.
 #'
 #' @details The formula can include a single smooth covariate and any number of
@@ -55,45 +56,40 @@ fit_gamgc_sce <- function(sce,
                           lambda = 10^(seq(-5, 5, length.out = 7)),
                           K = 30,
                           nfold = 5,
+                          cores = 1,
                           control = list()) {
-    # Check argument not validated by fit_gamgc
-    assert_that(
-        methods::is(sce, "SingleCellExperiment"),
-        "copula_fit" %in% names(metadata(sce))
-    )
+    # Check arguments not validated by fit_gamgc
+    assert_that(methods::is(sce, "SingleCellExperiment"))
+
+    if (!"copula_fit" %in% names(metadata(sce))) {
+        stop("You must fit margins first using 'fit_margins'.")
+    }
 
     copula_fit <- metadata(sce)$copula_fit
     assert_that("FX" %in% names(copula_fit))
-    assay <- copula_fit$assay
-    design <- as.data.frame(SummarizedExperiment::colData(sce))
 
-    if (assay == "counts") {
-        assert_that(all(c("FXm", "V") %in% names(copula_fit)))
-        # Construct jittered pseudo-observations
-        FX <- copula_fit$FXm + (copula_fit$FX - copula_fit$FXm) * copula_fit$V
-    } else {
-        # Already jittered for logcounts
-        FX <- copula_fit$FX
-    }
+    # Identify all covariates in the formula
+    vars <- attributes(stats::terms(formula))$variable
+    varnames <- as.character(vars)[2:length(vars)]
+    s_terms <- unique(varnames[grepl("s(*)", varnames)])
+    s_name <- sub("^s\\((.*)\\)$", "\\1", s_terms)
+    covs <- unique(c(varnames[varnames != s_terms], s_name))
+
+    # Design matrix
+    design <- SummarizedExperiment::colData(sce)[, covs, drop = FALSE]
+    design <- as.data.frame(design)
 
     # Estimate copula parameters
     res <- fit_gamgc(
-        FX = FX,
+        FX = copula_fit$FX,
         design = design,
         formula = formula,
         lambda = lambda,
         K = K,
         nfold = nfold,
-        cores = copula_fit$cores,
+        cores = cores,
         control = control
     )
-
-    # Convert numeric labels to gene names
-    colnames(res$rho) <- sapply(colnames(res$rho), function(x) {
-        x2 <- unlist(strsplit(x, split = "rho"))[2]
-        ix <- as.numeric(unlist(strsplit(x2, split = '_')))
-        return(paste(copula_fit$features[ix], collapse = '_'))
-    })
 
     # Save results in metadata
     metadata(sce)$copula_fit <- c(metadata(sce)$copula_fit, res)
