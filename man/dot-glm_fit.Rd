@@ -9,9 +9,9 @@
 \arguments{
 \item{FX}{Matrix of pseudo-observations.}
 
-\item{design}{Design matrix. Rows correspond to rows in \code{FX}. If no
-covariates should be included in the model, pass a \code{data.frame} with a
-column of all ones.}
+\item{design}{A \code{data.frame} specifying the design matrix. Rows
+correspond to rows in \code{FX}. If no covariates should be included in the
+model, pass a \code{data.frame} with a column of all ones.}
 
 \item{lin_formula}{Formula for linear covariates.}
 

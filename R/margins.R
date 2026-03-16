@@ -13,6 +13,7 @@
 #' @param nu_formula Formula for zero proportion parameter.
 #' @param save Whether to save all model information. Default is \code{TRUE}.
 #' @param cores Number of cores to use. Default is \code{1}.
+#'
 #' @details Variable names in the formulas should be column metadata names.
 #'
 #' The argument \code{save} should be set to \code{TRUE} if you plan on sampling
@@ -115,6 +116,7 @@ fit_margins <- function(sce,
                     family = gamlss_family,
                     control = gamlss::gamlss.control(trace = FALSE)
                 )
+                mfit$call$family <- as.name(family)
 
                 # Get model parameters
                 par <- gamlss::predictAll(
@@ -161,6 +163,8 @@ fit_margins <- function(sce,
     # The models are very large and not worth saving unless we need them again
     if (save) {
         metadata(sce)$copula_fit$margins <- margins
+    } else {
+        metadata(sce)$copula_fit$margins <- NULL
     }
 
     # Pseudo-observations

@@ -6,13 +6,15 @@
 #' Gaussian copula model.
 #'
 #' @param object A fitted object of class \code{gamGaussianCopula}.
-#' @param FX_new Matrix of new pseudo-observations.
-#' @param design_new New design matrix. Rows correspond to rows in
-#' \code{FX_new}. Must include the same columns as in the design matrix in the
-#' original \link[DynCopula]{fit_gamgc} call.
-#' @param type The type of prediction required. The default is correlation
-#' coefficients (\code{"response"}). The \code{"link"} option returns
-#' predictions of the calibration coefficients.
+#' @param design A \code{data.frame} specifying the new design matrix. Must
+#' include the same columns as in the design matrix in the original
+#' \link[DynCopula]{fit_gamgc} call.
+#' @param type The type of prediction required. The default option
+#' \code{"response"} returns a \code{matrix} of correlation coefficients, with
+#' rows corresponding to rows in \code{design}. The \code{"link"} option returns
+#' a \code{matrix} of predictions of the coefficients on the link scale. The
+#' \code{"response_matrix"} returns a list of correlation matrices, one per row
+#' of \code{design}.
 #' @param ... Additional arguments.
 #'
 #' @returns A matrix of coefficients.
@@ -47,35 +49,28 @@
 #' gc <- fit_gamgc(U, design, formula = ~x1 + x2 + s(t))
 #'
 #' # Predict correlation coefficients for original data
-#' pred <- predict(
-#'     object = gc,
-#'     FX_new = U,
-#'     design_new = design
-#' )
+#' pred <- predict(gc, design)
 #' }
 #'
 #' @export
 #'
 #' @method predict gamGaussianCopula
 predict.gamGaussianCopula <- function(object,
-                                      FX_new,
-                                      design_new,
-                                      type = c("response", "link"),
+                                      design,
+                                      type = c("response", "link", "response_matrix"),
                                       ...) {
     assert_that(
         methods::is(object, "gamGaussianCopula"),
-        is.numeric(FX_new) && is.matrix(FX_new),
-        is.data.frame(design_new),
-        dim(FX_new)[1] == dim(design_new)[1],
+        is.data.frame(design),
         is.character(type)
     )
 
     type <- match.arg(type)
-    N <- dim(FX_new)[1]
+    N <- object$nobs
 
     # Make sure new design matrix has necessary columns
     all_vars <- c(all.vars(object$lin_formula), all.vars(object$int_formula))
-    missing_vars <- setdiff(all_vars, colnames(design_new))
+    missing_vars <- setdiff(all_vars, colnames(design))
     if (length(missing_vars) > 0L) {
         stop("The following columns are missing in the design matrix: ",
              paste(missing_vars, collapse = ", "))
@@ -83,7 +78,7 @@ predict.gamGaussianCopula <- function(object,
 
     # Pad design matrices in case new design matrices are missing factors
     # present in the original design matrix
-    Z_new <- stats::model.matrix(object$lin_formula, design_new)
+    Z_new <- stats::model.matrix(object$lin_formula, design)
     Z_col_miss <- setdiff(object$Z_names, colnames(Z_new))
     if (length(Z_col_miss) > 0L) {
         nzn <- dim(Z_new)[2]
@@ -94,7 +89,7 @@ predict.gamGaussianCopula <- function(object,
 
     smooth_name <- object$smooth_name
     if (!is.null(smooth_name)) {
-        M_new <- stats::model.matrix(object$int_formula, design_new)
+        M_new <- stats::model.matrix(object$int_formula, design)
         M_col_miss <- setdiff(object$M_names, colnames(M_new))
         if (length(M_col_miss) > 0L) {
             nmn <- dim(M_new)[2]
@@ -109,7 +104,7 @@ predict.gamGaussianCopula <- function(object,
         Hhat <- Z_new %*% object$beta
     } else {
         # Extract new smooth covariate values
-        x_new <- design_new[[smooth_name]]
+        x_new <- design[[smooth_name]]
 
         # Standard scale smooth covariate on original scale
         min_x <- min(object$time)
@@ -131,7 +126,6 @@ predict.gamGaussianCopula <- function(object,
         L1 <- dim(M_new)[2]
         L2 <- dim(Z_new)[2]
         p <- dim(beta)[2]
-        N <- dim(FX_new)[1]
 
         betas <- array(beta[(L2 + 1):(L2 + K * L1), ], dim = c(K, p, L1))
         betas <- aperm(betas, c(3, 1, 2))  # (L1, K, p)
@@ -142,30 +136,39 @@ predict.gamGaussianCopula <- function(object,
         Hhat <- Hhat + Z_new %*% beta[1:L2, ]
     }
 
-    # Add column labels
-    d <- dim(FX_new)[2]
-    colnames(Hhat) <- paste0("eta", seq_len(choose(d, 2)))
+    d <- object$dim
     if (type == "link") {
+        # Matrix of predicted coefficients on the link scale
+        colnames(Hhat) <- paste0("eta", seq_len(choose(d, 2)))
         return(Hhat)
+    } else if (type == "response_matrix") {
+        # List of predicted correlation matrices
+        Rhat <- lapply(seq_len(dim(Hhat)[1]), function(i) {
+            R <- vec2cor(Hhat[i, ])
+            rownames(R) <- colnames(R) <- object$colnames
+            return(R)
+        })
+        return(Rhat)
+    } else {
+        # Matrix of predicted correlation coefficients
+        Rhat <- t(apply(Hhat, 1, function(v) {
+            copula::P2p(vec2cor(v))
+        }))
+
+        # Ensure consistent shape of Rhat across all dimensions
+        if (d == 2L) {
+            Rhat <- t(Rhat)
+        }
+
+        # Add column labels
+        cnames <- object$colnames
+        combs <- t(utils::combn(seq_len(d), 2))
+        colnames(Rhat) <- apply(combs, 1, function(x) {
+            paste(cnames[x[1]], cnames[x[2]], sep = '_')
+        })
+
+        return(Rhat)
     }
-
-    # Matrix of estimated correlation coefficients
-    Rhat <- t(apply(Hhat, 1, function(v) {
-        copula::P2p(vec2cor(v))
-    }))
-
-    # Ensure consistent shape of Rhat across all dimensions
-    if (d == 2L) {
-        Rhat <- t(Rhat)
-    }
-
-    # Add column labels
-    cnames <- object$colnames
-    colnames(Rhat) <- apply(t(utils::combn(seq_len(d), 2)), 1, function(x) {
-        paste(cnames[x[1]], cnames[x[2]], sep = '_')
-    })
-
-    return(Rhat)
 }
 
 ###############################################################################

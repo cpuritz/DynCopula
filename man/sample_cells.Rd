@@ -2,24 +2,19 @@
 % Please edit documentation in R/sample.R
 \name{sample_cells}
 \alias{sample_cells}
-\title{Sample cells along trajectory}
+\title{Sample cells}
 \usage{
-sample_cells(sce, new_times, interpolation = c("linear", "spline"))
+sample_cells(sce, design)
 }
 \arguments{
 \item{sce}{A \code{SingleCellExperiment}.}
 
-\item{new_times}{A vector of pseudotimes to sample at.}
-
-\item{interpolation}{Interpolation method, either linear or spline.}
+\item{design}{A \code{data.frame} specifying the new design matrix.}
 }
 \value{
-A \code{SingleCellExperiment}.
+A \code{SingleCellExperiment} with simulated counts.
 }
 \description{
-Sample cells along the trajectory at specified pseudotimes.
-}
-\details{
-To sample from the copula at the new times, calibration coefficients
-are interpolated at new times using either linear or spline interpolation.
+Sample cells from the fitted joint distribution given new
+covariate values.
 }

@@ -71,9 +71,17 @@ fit_gamgc_sce <- function(sce,
     # Identify all covariates in the formula
     vars <- attributes(stats::terms(formula))$variable
     varnames <- as.character(vars)[2:length(vars)]
+    # Terms involving the smooth covariate
     s_terms <- unique(varnames[grepl("s(*)", varnames)])
-    s_name <- sub("^s\\((.*)\\)$", "\\1", s_terms)
-    covs <- unique(c(varnames[varnames != s_terms], s_name))
+    if (length(s_terms) > 0L) {
+        # Name of the smooth covariate
+        s_name <- sub("^s\\((.*)\\)$", "\\1", s_terms)
+        # All covariate names
+        covs <- unique(c(varnames[varnames != s_terms], s_name))
+    } else {
+        # Covariate names
+        covs <- varnames
+    }
 
     # Design matrix
     design <- SummarizedExperiment::colData(sce)[, covs, drop = FALSE]
@@ -92,7 +100,7 @@ fit_gamgc_sce <- function(sce,
     )
 
     # Save results in metadata
-    metadata(sce)$copula_fit <- c(metadata(sce)$copula_fit, res)
+    metadata(sce)$copula_fit$fit <- res
 
     return(sce)
 }

@@ -5,9 +5,9 @@
 #' @description Fit a generalized additive model for a Gaussian copula.
 #'
 #' @param FX Matrix of pseudo-observations.
-#' @param design Design matrix. Rows correspond to rows in \code{FX}. If no
-#' covariates should be included in the model, pass a \code{data.frame} with a
-#' column of all ones.
+#' @param design A \code{data.frame} specifying the design matrix. Rows
+#' correspond to rows in \code{FX}. If no covariates should be included in the
+#' model, pass a \code{data.frame} with a column of all ones.
 #' @param formula Formula for covariates.
 #' @param lambda Vector of penalty parameters to test. Default is
 #' \code{10^(seq(-5, 5, length.out = 7))}.

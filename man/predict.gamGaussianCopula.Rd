@@ -4,20 +4,21 @@
 \alias{predict.gamGaussianCopula}
 \title{Predict method for GAM Gaussian copula models}
 \usage{
-\method{predict}{gamGaussianCopula}(object, FX_new, design_new, type = c("response", "link"), ...)
+\method{predict}{gamGaussianCopula}(object, design, type = c("response", "link", "response_matrix"), ...)
 }
 \arguments{
 \item{object}{A fitted object of class \code{gamGaussianCopula}.}
 
-\item{FX_new}{Matrix of new pseudo-observations.}
+\item{design}{A \code{data.frame} specifying the new design matrix. Must
+include the same columns as in the design matrix in the original
+\link[DynCopula]{fit_gamgc} call.}
 
-\item{design_new}{New design matrix. Rows correspond to rows in
-\code{FX_new}. Must include the same columns as in the design matrix in the
-original \link[DynCopula]{fit_gamgc} call.}
-
-\item{type}{The type of prediction required. The default is correlation
-coefficients (\code{"response"}). The \code{"link"} option returns
-predictions of the calibration coefficients.}
+\item{type}{The type of prediction required. The default option
+\code{"response"} returns a \code{matrix} of correlation coefficients, with
+rows corresponding to rows in \code{design}. The \code{"link"} option returns
+a \code{matrix} of predictions of the coefficients on the link scale. The
+\code{"response_matrix"} returns a list of correlation matrices, one per row
+of \code{design}.}
 
 \item{...}{Additional arguments.}
 }
@@ -58,11 +59,7 @@ U <- t(sapply(seq(N), function(i) {
 gc <- fit_gamgc(U, design, formula = ~x1 + x2 + s(t))
 
 # Predict correlation coefficients for original data
-pred <- predict(
-    object = gc,
-    FX_new = U,
-    design_new = design
-)
+pred <- predict(gc, design)
 }
 
 }
