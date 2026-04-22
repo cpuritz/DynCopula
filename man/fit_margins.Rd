@@ -11,8 +11,9 @@ fit_margins(
   mu_formula,
   sigma_formula,
   nu_formula,
+  save = TRUE,
   cores = 1,
-  save = TRUE
+  cl_type = NULL
 )
 }
 \arguments{
@@ -29,9 +30,13 @@ fit_margins(
 
 \item{nu_formula}{Formula for zero proportion parameter.}
 
+\item{save}{Whether to save all model information. Default is \code{TRUE}.}
+
 \item{cores}{Number of cores to use. Default is \code{1}.}
 
-\item{save}{Whether to save all model information. Default is \code{TRUE}.}
+\item{cl_type}{Type of cluster for parallel computations. If \code{NULL},
+the value of \code{snow::getClusterOption("type")} is used. See
+\link[parallel]{makeCluster} for details.}
 }
 \value{
 The same \code{SingleCellExperiment} as was passed as input, but

@@ -13,6 +13,9 @@
 #' @param K Dimension of the spline basis matrix. Default is \code{30}.
 #' @param nfold Number of folds for cross-validation. Default is \code{5}.
 #' @param cores Number of cores to use. Default is \code{1}.
+#' @param cl_type Type of cluster for parallel computations. If \code{NULL},
+#' the value of \code{snow::getClusterOption("type")} is used. See
+#' \link[parallel]{makeCluster} for details.
 #' @param control A \code{list} of control parameters for optimization.
 #'
 #' @details The formula can include a single smooth covariate and any number of
@@ -57,6 +60,7 @@ fit_gamgc_sce <- function(sce,
                           K = 30,
                           nfold = 5,
                           cores = 1,
+                          cl_type = NULL,
                           control = list()) {
     # Check arguments not validated by fit_gamgc
     assert_that(methods::is(sce, "SingleCellExperiment"))

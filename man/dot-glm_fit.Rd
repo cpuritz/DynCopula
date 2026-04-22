@@ -4,7 +4,7 @@
 \alias{.glm_fit}
 \title{Internal function to fit a GLM Gaussian copula model}
 \usage{
-.glm_fit(FX, design, lin_formula, lambda, nfold, cores, control)
+.glm_fit(FX, design, lin_formula, lambda, nfold, cores, cl_type, control)
 }
 \arguments{
 \item{FX}{Matrix of pseudo-observations.}
@@ -21,6 +21,10 @@ model, pass a \code{data.frame} with a column of all ones.}
 \item{nfold}{Number of folds for cross-validation. Default is \code{5}.}
 
 \item{cores}{Number of cores to use. Default is \code{1}.}
+
+\item{cl_type}{Type of cluster for parallel computations. If \code{NULL},
+the value of \code{snow::getClusterOption("type")} is used. See
+\link[parallel]{makeCluster} for details.}
 
 \item{control}{A \code{list} of control parameters for optimization.}
 }

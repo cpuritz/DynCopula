@@ -26,6 +26,7 @@ Imports:
     reticulate,
     S4Vectors,
     SingleCellExperiment,
+    snow,
     splines,
     stats,
     SummarizedExperiment,

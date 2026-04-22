@@ -13,6 +13,9 @@
 #' @param nu_formula Formula for zero proportion parameter.
 #' @param save Whether to save all model information. Default is \code{TRUE}.
 #' @param cores Number of cores to use. Default is \code{1}.
+#' @param cl_type Type of cluster for parallel computations. If \code{NULL},
+#' the value of \code{snow::getClusterOption("type")} is used. See
+#' \link[parallel]{makeCluster} for details.
 #'
 #' @details Variable names in the formulas should be column metadata names.
 #'
@@ -33,8 +36,9 @@ fit_margins <- function(sce,
                         mu_formula,
                         sigma_formula,
                         nu_formula,
+                        save = TRUE,
                         cores = 1,
-                        save = TRUE) {
+                        cl_type = NULL) {
     assert_that(
         methods::is(sce, "SingleCellExperiment"),
         is.character(features),
@@ -64,7 +68,10 @@ fit_margins <- function(sce,
     # Set up futures plan
     run_parallel <- (cores > 1L)
     if (run_parallel) {
-        cl <- parallel::makeCluster(cores)
+        if (is.null(cl_type)) {
+            cl_type <- snow::getClusterOption("type")
+        }
+        cl <- parallel::makeCluster(cores, type = cl_type)
         future::plan(future::cluster, workers = cl)
         on.exit({
             future::plan(future::sequential)
