@@ -4,7 +4,12 @@
 \alias{predict.gamGaussianCopula}
 \title{Predict method for GAM Gaussian copula models}
 \usage{
-\method{predict}{gamGaussianCopula}(object, design, type = c("response", "link", "response_matrix"), ...)
+\method{predict}{gamGaussianCopula}(
+  object,
+  design,
+  type = c("response", "link", "response_matrix", "tau", "tau_matrix"),
+  ...
+)
 }
 \arguments{
 \item{object}{A fitted object of class \code{gamGaussianCopula}.}
@@ -13,17 +18,22 @@
 include the same columns as in the design matrix in the original
 \link[DynCopula]{fit_gamgc} call.}
 
-\item{type}{The type of prediction required. The default option
+\item{type}{The type of prediction to return The default option
 \code{"response"} returns a \code{matrix} of correlation coefficients, with
-rows corresponding to rows in \code{design}. The \code{"link"} option returns
-a \code{matrix} of predictions of the coefficients on the link scale. The
-\code{"response_matrix"} returns a list of correlation matrices, one per row
-of \code{design}.}
+rows corresponding to rows in \code{design} and columns corresponding to
+pairwise coefficients in row-major order. \code{"link"} returns a
+\code{matrix} of coefficients on the link scale. \code{"response_matrix"}
+returns a list of pairwise correlation matrices, one per row of
+\code{design}. \code{"tau"} returns a \code{matrix} of Kendall's tau
+coefficients with rows corresponding to rows in \code{design} and columns
+corresponding to pairwise coefficients in row-major order.
+\code{"tau_matrix"} returns a list of pairwise Kendall's tau matrices, one
+per row of \code{design}.}
 
 \item{...}{Additional arguments.}
 }
 \value{
-A matrix of coefficients.
+A matrix or list of matrices.
 }
 \description{
 Predict coefficients for new data from a previously fit GAM
@@ -35,28 +45,25 @@ library(DynCopula)
 library(copula)
 set.seed(0)
 
-N <- 1000
+N <- 500
 # Smooth covariate
 t <- runif(N)
-# Linear covariates
-x1 <- sample(c("a", "b"), N, replace = TRUE)
-x2 <- sample(seq(5), N, replace = TRUE)
 # Design matrix
-design <- data.frame(t = t, x1 = x1, x2 = x2)
+design <- data.frame(t = t)
 
 # Covariate-dependent correlation function
-rho <- function(t, x1, x2) {
-    0.7 * cos(4 * pi * t) + (x1 == "b") * 0.1 - 0.01 * x2
+rho <- function(t) {
+    0.7 * cos(4 * pi * t)
 }
 # Sample from copula
 U <- t(sapply(seq(N), function(i) {
-    rho_i <- rho(t[i], x1[i], x2[i])
+    rho_i <- rho(t[i])
     cop <- normalCopula(param = rho_i, dim = 2, dispstr = "un")
     return(rCopula(1L, cop))
 }))
 
 # Fit model
-gc <- fit_gamgc(U, design, formula = ~x1 + x2 + s(t))
+gc <- fit_gamgc(U, design, formula = ~s(t))
 
 # Predict correlation coefficients for original data
 pred <- predict(gc, design)

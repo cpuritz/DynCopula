@@ -1,24 +1,40 @@
 ###############################################################################
 
+.onLoad <- function(libname, pkgname) {
+    config_path <- file.path(
+        rappdirs::user_config_dir(pkgname),
+        "config.json"
+    )
+    if (file.exists(config_path)) {
+        envname <- jsonlite::read_json(config_path)$envname
+        if (!is.null(envname)) {
+            reticulate::use_virtualenv(envname, required = FALSE)
+        }
+    }
+}
+
+###############################################################################
+
 .onAttach <- function(libname, pkgname) {
     # Don't print startup messages during development
     if ("devtools" %in% loadedNamespaces()) {
         return()
     }
 
-    # Print message if a Python interpreter has not been specified yet
-    config_path <- file.path(rappdirs::user_config_dir(pkgname), "config.json")
-    msg <- paste0("Python interpreter not yet specified. Run '", pkgname,
-                  "::pkg_setup()'.")
+    config_path <- file.path(
+        rappdirs::user_config_dir(pkgname),
+        "config.json"
+    )
+    msg <- paste0(pkgname, " is not configured. Run pkg_setup().")
     if (!file.exists(config_path)) {
         packageStartupMessage(msg)
-    } else {
-        config <- jsonlite::read_json(config_path)
-        # Should never get here, but check to be safe
-        py_path <- config$python_path
-        if ((is.null(py_path) || !file.exists(py_path))) {
-            packageStartupMessage(msg)
-        }
+        return()
+    }
+
+    envname <- jsonlite::read_json(config_path)$envname
+    if (is.null(envname)) {
+        # Will only trigger if config file got corrupted
+        packageStartupMessage(msg)
     }
 }
 

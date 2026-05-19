@@ -104,7 +104,7 @@ library(DynCopula)
 library(copula)
 set.seed(0)
 
-N <- 1000
+N <- 200
 # Smooth covariate
 t <- runif(N)
 # Linear covariates

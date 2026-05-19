@@ -79,7 +79,7 @@
 #' library(copula)
 #' set.seed(0)
 #'
-#' N <- 1000
+#' N <- 200
 #' # Smooth covariate
 #' t <- runif(N)
 #' # Linear covariates
@@ -165,15 +165,6 @@ fit_gamgc <- function(FX,
     control$max_itr <- as.integer(control$max_itr)
     control$history_size <- as.integer(control$history_size)
 
-    # Ensure correct Python interpreter is used
-    conf_dir <- rappdirs::user_config_dir("DynCopula")
-    conf_path <- file.path(conf_dir, "config.json")
-    py_intr <- jsonlite::read_json(conf_path)$python_path
-    Sys.setenv(
-        RETICULATE_PYTHON = py_intr,
-        RETICULATE_AUTOCONFIGURE = "FALSE"
-    )
-
     if (is.null(int_formula)) {
         .glm_fit(
             FX = FX,
@@ -219,9 +210,6 @@ fit_gamgc <- function(FX,
     # Normal-transform pseudo-observations
     NX <- stats::qnorm(FX)
 
-    # Location of Python files
-    py_path <- system.file("python", package = "DynCopula")
-
     # Construct linear design matrix
     missing_vars <- setdiff(all.vars(lin_formula), colnames(design))
     if (length(missing_vars) > 0L) {
@@ -239,6 +227,9 @@ fit_gamgc <- function(FX,
     # is not going to be run.
     run_cv <- (length(lambda) > 1)
     run_parallel <- (cores > 1L) && run_cv
+
+    # Location of Python files
+    py_path <- system.file("python", package = "DynCopula")
 
     # Since Python functions are not serializable, we can't load the
     # optimization functions in the global environment. Instead, the functions
@@ -438,9 +429,6 @@ fit_gamgc <- function(FX,
     # Normal-transform pseudo-observations
     NX <- stats::qnorm(FX)
 
-    # Location of Python files
-    py_path <- system.file("python", package = "DynCopula")
-
     # Sort by smooth covariate
     x <- design[[smooth_name]]
     if (is.unsorted(x)) {
@@ -483,6 +471,9 @@ fit_gamgc <- function(FX,
         intercept = FALSE,
         Boundary.knots = c(-control$boundary, 1 + control$boundary)
     )
+
+    # Location of Python files
+    py_path <- system.file("python", package = "DynCopula")
 
     # Since Python functions are not serializable, we can't load the
     # optimization functions in the global environment. Instead, the functions

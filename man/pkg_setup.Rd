@@ -4,19 +4,37 @@
 \alias{pkg_setup}
 \title{Setup the package}
 \usage{
-pkg_setup(python_path)
+pkg_setup(envname = "r-dyn-copula", torch_version = "torch")
 }
 \arguments{
-\item{python_path}{The path to a Python interpreter.}
+\item{envname}{Name of the virtual environment to create. Default is
+\code{"r-dyn-copula"}. An existing environment with this name will be removed
+and recreated.}
+
+\item{torch_version}{PyTorch version constraint passed to pip, e.g.
+\code{"torch==2.3.0"} or \code{"torch>=2.0"}. Defaults to \code{"torch"}
+(latest stable).}
 }
 \value{
 Nothing, called for side effects.
 }
 \description{
-Setup the package by checking that necessary Python modules are
-installed, and then storing the path to the Python interpreter.
+Creates a dedicated Python virtual environment for DynCopula,
+installs the required Python dependencies (NumPy and PyTorch), and saves the
+configuration for future sessions.
 }
 \details{
-The NumPy and PyTorch libraries are required for computations. This
-function writes a JSON file to \code{rappdirs::user_config_dir("DynCopula")}.
+This function:
+\enumerate{
+  \item Creates a new Python virtual environment managed by reticulate.
+  \item Installs NumPy and PyTorch (CPU build) into that environment via pip.
+  \item Verifies the installations by importing both modules.
+  \item Writes the environment name to a JSON config file in
+    \code{rappdirs::user_config_dir("DynCopula")} so that future sessions
+    activate it automatically.
+}
+
+Call this function once after installing DynCopula. Restart R afterwards.
+The environment is self-contained and will not affect other Python
+installations on your system.
 }

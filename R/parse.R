@@ -1,3 +1,5 @@
+###############################################################################
+
 #' Parse a formula into linear and smooth parts
 #'
 #' @description Parse a formula into linear and smooth parts. Used internally.
@@ -82,3 +84,5 @@
         smooth_name = s_name
     ))
 }
+
+###############################################################################
