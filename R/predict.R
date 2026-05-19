@@ -9,15 +9,20 @@
 #' @param design A \code{data.frame} specifying the new design matrix. Must
 #' include the same columns as in the design matrix in the original
 #' \link[DynCopula]{fit_gamgc} call.
-#' @param type The type of prediction required. The default option
+#' @param type The type of prediction to return The default option
 #' \code{"response"} returns a \code{matrix} of correlation coefficients, with
-#' rows corresponding to rows in \code{design}. The \code{"link"} option returns
-#' a \code{matrix} of predictions of the coefficients on the link scale. The
-#' \code{"response_matrix"} returns a list of correlation matrices, one per row
-#' of \code{design}.
+#' rows corresponding to rows in \code{design} and columns corresponding to
+#' pairwise coefficients in row-major order. \code{"link"} returns a
+#' \code{matrix} of coefficients on the link scale. \code{"response_matrix"}
+#' returns a list of pairwise correlation matrices, one per row of
+#' \code{design}. \code{"tau"} returns a \code{matrix} of Kendall's tau
+#' coefficients with rows corresponding to rows in \code{design} and columns
+#' corresponding to pairwise coefficients in row-major order.
+#' \code{"tau_matrix"} returns a list of pairwise Kendall's tau matrices, one
+#' per row of \code{design}.
 #' @param ... Additional arguments.
 #'
-#' @returns A matrix of coefficients.
+#' @returns A matrix or list of matrices.
 #'
 #' @examples
 #' \dontrun{
@@ -25,28 +30,25 @@
 #' library(copula)
 #' set.seed(0)
 #'
-#' N <- 1000
+#' N <- 500
 #' # Smooth covariate
 #' t <- runif(N)
-#' # Linear covariates
-#' x1 <- sample(c("a", "b"), N, replace = TRUE)
-#' x2 <- sample(seq(5), N, replace = TRUE)
 #' # Design matrix
-#' design <- data.frame(t = t, x1 = x1, x2 = x2)
+#' design <- data.frame(t = t)
 #'
 #' # Covariate-dependent correlation function
-#' rho <- function(t, x1, x2) {
-#'     0.7 * cos(4 * pi * t) + (x1 == "b") * 0.1 - 0.01 * x2
+#' rho <- function(t) {
+#'     0.7 * cos(4 * pi * t)
 #' }
 #' # Sample from copula
 #' U <- t(sapply(seq(N), function(i) {
-#'     rho_i <- rho(t[i], x1[i], x2[i])
+#'     rho_i <- rho(t[i])
 #'     cop <- normalCopula(param = rho_i, dim = 2, dispstr = "un")
 #'     return(rCopula(1L, cop))
 #' }))
 #'
 #' # Fit model
-#' gc <- fit_gamgc(U, design, formula = ~x1 + x2 + s(t))
+#' gc <- fit_gamgc(U, design, formula = ~s(t))
 #'
 #' # Predict correlation coefficients for original data
 #' pred <- predict(gc, design)
@@ -57,7 +59,9 @@
 #' @method predict gamGaussianCopula
 predict.gamGaussianCopula <- function(object,
                                       design,
-                                      type = c("response", "link", "response_matrix"),
+                                      type = c("response", "link",
+                                               "response_matrix", "tau",
+                                               "tau_matrix"),
                                       ...) {
     assert_that(
         methods::is(object, "gamGaussianCopula"),
@@ -136,19 +140,27 @@ predict.gamGaussianCopula <- function(object,
         Hhat <- Hhat + Z_new %*% beta[1:L2, ]
     }
 
+    par2tau <- function(x) {
+        2 / pi * asin(x)
+    }
+
     d <- object$dim
     if (type == "link") {
         # Matrix of predicted coefficients on the link scale
         colnames(Hhat) <- paste0("eta", seq_len(choose(d, 2)))
         return(Hhat)
-    } else if (type == "response_matrix") {
+    } else if (type == "response_matrix" || type == "tau_matrix") {
         # List of predicted correlation matrices
-        Rhat <- lapply(seq_len(dim(Hhat)[1]), function(i) {
+        Rhat_list <- lapply(seq_len(dim(Hhat)[1]), function(i) {
             R <- vec2cor(Hhat[i, ])
             rownames(R) <- colnames(R) <- object$colnames
             return(R)
         })
-        return(Rhat)
+        if (type == "response_matrix") {
+            return(Rhat_list)
+        } else {
+            return(lapply(Rhat_list, par2tau))
+        }
     } else {
         # Matrix of predicted correlation coefficients
         Rhat <- t(apply(Hhat, 1, function(v) {
@@ -160,14 +172,33 @@ predict.gamGaussianCopula <- function(object,
             Rhat <- t(Rhat)
         }
 
-        # Add column labels
-        cnames <- object$colnames
-        combs <- t(utils::combn(seq_len(d), 2))
-        colnames(Rhat) <- apply(combs, 1, function(x) {
-            paste(cnames[x[1]], cnames[x[2]], sep = '_')
-        })
+        if (type == "tau") {
+            tau_hat <- par2tau(Rhat)
 
-        return(Rhat)
+            # Add column labels
+            cnames <- object$colnames
+            if (is.null(cnames)) {
+                cnames <- seq_len(object$dim)
+            }
+            combs <- t(utils::combn(seq_len(d), 2))
+            colnames(tau_hat) <- apply(combs, 1, function(x) {
+                paste("tau", cnames[x[1]], cnames[x[2]], sep = '_')
+            })
+
+            return(tau_hat)
+        } else {
+            # Add column labels
+            cnames <- object$colnames
+            if (is.null(cnames)) {
+                cnames <- seq_len(object$dim)
+            }
+            combs <- t(utils::combn(seq_len(d), 2))
+            colnames(Rhat) <- apply(combs, 1, function(x) {
+                paste("rho", cnames[x[1]], cnames[x[2]], sep = '_')
+            })
+
+            return(Rhat)
+        }
     }
 }
 
