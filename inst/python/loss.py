@@ -35,7 +35,7 @@ def _glm_loss(
 	
 	eta = Z @ beta
 	# L2 penalty for linear predictor
-	pen_l2 = lam * torch.linalg.norm(beta)
+	pen_l2 = lam * torch.linalg.norm(beta)**2
 	nll = -torch.sum(_log_mvn_density(X = NX, V = eta, dtype = dtype))
 	return nll + pen_l2
 
@@ -94,7 +94,7 @@ def _gam_loss(
 	nll = -torch.sum(_log_mvn_density(X = NX, V = eta, dtype = dtype))
 	
 	# L2 penalty for linear predictor
-	pen_l2 = lam[0] * torch.linalg.norm(alpha)
+	pen_l2 = lam[0] * torch.linalg.norm(alpha)**2
 	
 	# Roughness penalty for smooth predictor
 	# S @ beta[j]
@@ -154,6 +154,7 @@ def _log_mvn_density(
 
 ###############################################################################
 
+@lru_cache(maxsize = 1)
 def _pen_mat(K: int, dtype: torch.dtype) -> torch.Tensor:
     """
 	Compute penalty matrix.
