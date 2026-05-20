@@ -30,7 +30,7 @@
     factors <- attributes(terms)$factors
 
     # Identify smoothing terms
-    s_terms <- unique(varnames[grepl("s(*)", varnames)])
+    s_terms <- unique(varnames[grepl("^s\\(.*\\)$", varnames)])
     is_smooth <- (rownames(factors) == s_terms)
     if (length(s_terms) == 0L) {
         int_formula <- NULL
