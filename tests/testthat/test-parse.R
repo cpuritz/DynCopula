@@ -6,10 +6,10 @@ test_that("parse_formula", {
         f2 <- res$smooth_linear_int
 
         get_terms <- function(f) {
-            if (is.null(f1)) {
+            if (is.null(f)) {
                 return(NULL)
             }
-            return(sort(attr(terms(f1), "term.labels")))
+            return(sort(attr(terms(f), "term.labels")))
         }
 
         testthat::expect_true(identical(get_terms(f1), get_terms(r1)))
