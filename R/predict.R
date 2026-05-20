@@ -70,7 +70,7 @@ predict.gamGaussianCopula <- function(object,
     )
 
     type <- match.arg(type)
-    N <- object$nobs
+    N <- nrow(design)
 
     # Make sure new design matrix has necessary columns
     all_vars <- c(all.vars(object$lin_formula), all.vars(object$int_formula))
