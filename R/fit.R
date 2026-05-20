@@ -12,7 +12,7 @@
 #' @param lambda Vector of penalty parameters to test. Default is
 #' \code{10^(seq(-5, 5, length.out = 7))}.
 #' @param K Dimension of the spline basis matrix. Default is \code{30}.
-#' @param nfold Number of folds for cross-validation. Default is \code{5}.
+#' @param nfold Number of folds for cross-validation. Default is \code{10}.
 #' @param cores Number of cores to use. Default is \code{1}.
 #' @param cl_type Type of cluster for parallel computations. If \code{NULL},
 #' the value of \code{snow::getClusterOption("type")} is used. See
@@ -115,7 +115,7 @@ fit_gamgc <- function(FX,
                       formula,
                       lambda = 10^(seq(-5, 5, length.out = 7)),
                       K = 30,
-                      nfold = 5,
+                      nfold = 10,
                       cores = 1,
                       cl_type = NULL,
                       control = list()) {
@@ -275,11 +275,12 @@ fit_gamgc <- function(FX,
         )
     }
 
+    fold_ids <- NULL
     if (run_cv) {
-        # N-fold cross validation
+        # N-fold cross validation with randomized folds
         nfold <- as.integer(nfold)
         fold_ids <- cut(seq_len(N), breaks = nfold, labels = FALSE)
-        folds_ids <- sample(fold_ids)
+        fold_ids <- sample(fold_ids)
 
         # All combinations of penalty parameter and test fold ID
         combs <- expand.grid(
@@ -669,7 +670,7 @@ fit_gamgc <- function(FX,
         smooth_name = smooth_name,
         lin_formula = lin_formula,
         int_formula = int_formula,
-        colnames = colnames(FX)
+        colnames = cnames
     )
     class(res) <- "gamGaussianCopula"
     return(res)
