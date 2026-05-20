@@ -126,12 +126,14 @@ fit_gamgc <- function(FX,
         dim(FX)[1] == dim(design)[1],
         methods::is(formula, "formula"),
         is.vector(lambda, mode = "numeric") && all(lambda > 0),
-        is.numeric(K) && K >= 3,
-        is.numeric(nfold) && nfold >= 2,
-        is.numeric(cores) && cores >= 1,
+        is.numeric(K) && is.finite(K) && K >= 3,
+        is.numeric(nfold) && is.finite(nfold) && nfold >= 2,
+        is.numeric(cores) && is.finite(cores) && cores >= 1,
         is.list(control)
     )
 
+    K <- as.integer(K)
+    nfold <- as.integer(nfold)
     cores <- as.integer(cores)
 
     # Parse formula
