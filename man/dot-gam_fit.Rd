@@ -37,7 +37,7 @@ the smooth covariate.}
 
 \item{K}{Dimension of the spline basis matrix. Default is \code{30}.}
 
-\item{nfold}{Number of folds for cross-validation. Default is \code{5}.}
+\item{nfold}{Number of folds for cross-validation. Default is \code{10}.}
 
 \item{cores}{Number of cores to use. Default is \code{1}.}
 

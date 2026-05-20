@@ -18,7 +18,7 @@ model, pass a \code{data.frame} with a column of all ones.}
 \item{lambda}{Vector of penalty parameters to test. Default is
 \code{10^(seq(-5, 5, length.out = 7))}.}
 
-\item{nfold}{Number of folds for cross-validation. Default is \code{5}.}
+\item{nfold}{Number of folds for cross-validation. Default is \code{10}.}
 
 \item{cores}{Number of cores to use. Default is \code{1}.}
 

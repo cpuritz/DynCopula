@@ -10,7 +10,7 @@ fit_gamgc(
   formula,
   lambda = 10^(seq(-5, 5, length.out = 7)),
   K = 30,
-  nfold = 5,
+  nfold = 10,
   cores = 1,
   cl_type = NULL,
   control = list()
@@ -30,7 +30,7 @@ model, pass a \code{data.frame} with a column of all ones.}
 
 \item{K}{Dimension of the spline basis matrix. Default is \code{30}.}
 
-\item{nfold}{Number of folds for cross-validation. Default is \code{5}.}
+\item{nfold}{Number of folds for cross-validation. Default is \code{10}.}
 
 \item{cores}{Number of cores to use. Default is \code{1}.}
 
