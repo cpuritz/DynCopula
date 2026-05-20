@@ -3,6 +3,7 @@ import math
 import numpy as np
 from typing import Mapping, Union
 from loss import _gam_loss, _log_mvn_density, _pen_mat
+from control import _parse_control
 
 ###############################################################################
 
@@ -40,16 +41,8 @@ def fit_gaussian_gam(
 		Estimated coefficient matrix. Shape `(K * L1 + L2, p)`.
 	"""
 	
-	max_iter = int(control["max_itr"])
-	history_size = int(control["history_size"])
-	tolerance_grad = float(control["tolerance_grad"])
-	tolerance_change = float(control["tolerance_change"])
-	dtype = control["precision"]
-
-	if dtype == "float32":
-	    dtype = torch.float32
-	else:
-	    dtype = torch.float64
+	control = _parse_control(control)
+	dtype = control["dtype"]
 	    
 	N, d = NX.shape
 	K = B.shape[1]
@@ -77,10 +70,10 @@ def fit_gaussian_gam(
 	optimizer = torch.optim.LBFGS(
 		[beta],
 		line_search_fn = "strong_wolfe",
-		max_iter = max_iter,
-		history_size = history_size,
-		tolerance_grad = tolerance_grad,
-		tolerance_change = tolerance_change
+		max_iter = control["max_iter"],
+		history_size = control["history_size"],
+		tolerance_grad = control["tolerance_grad"],
+		tolerance_change = control["tolerance_change"]
 	)
     
 	def closure():
@@ -114,7 +107,7 @@ def gaussian_gam_cv(
     max_test_ix: int
 ) -> float:
 	"""
-	Compute cross-validated log-likelihood for a GLM Gaussian copula model.
+	Compute cross-validated log-likelihood for a GAM Gaussian copula model.
 	
 	Parameters
 	----------
@@ -143,16 +136,8 @@ def gaussian_gam_cv(
 	    Cross-validated log-likelihood.
 	"""
 	
-	max_iter = int(control["max_itr"])
-	history_size = int(control["history_size"])
-	tolerance_grad = float(control["tolerance_grad"])
-	tolerance_change = float(control["tolerance_change"])
-	dtype = control["precision"]
-
-	if dtype == "float32":
-	    dtype = torch.float32
-	else:
-	    dtype = torch.float64
+	control = _parse_control(control)
+	dtype = control["dtype"]
 	    
 	N, d = NX.shape
 	K = B.shape[1]
@@ -199,10 +184,10 @@ def gaussian_gam_cv(
 	optimizer = torch.optim.LBFGS(
 		[beta],
 		line_search_fn = "strong_wolfe",
-		max_iter = max_iter,
-		history_size = history_size,
-		tolerance_grad = tolerance_grad,
-		tolerance_change = tolerance_change
+		max_iter = control["max_iter"],
+		history_size = control["history_size"],
+		tolerance_grad = control["tolerance_grad"],
+		tolerance_change = control["tolerance_change"]
 	)
 	
 	def closure():

@@ -3,6 +3,7 @@ import math
 import numpy as np
 from typing import Mapping, Union
 from loss import _glm_loss, _log_mvn_density, _pen_mat
+from control import _parse_control
 
 ###############################################################################
 
@@ -33,39 +34,30 @@ def fit_gaussian_glm(
 		Estimated coefficient matrix. Shape `(L, p)`.
 	"""
 	
-	max_iter = int(control["max_itr"])
-	history_size = int(control["history_size"])
-	tolerance_grad = float(control["tolerance_grad"])
-	tolerance_change = float(control["tolerance_change"])
-	dtype = control["precision"]
-
-	if dtype == "float32":
-	    dtype = torch.float32
-	else:
-	    dtype = torch.float64
+	control = _parse_control(control)
 	    
 	N, d = NX.shape
 	L = Z.shape[1]
 	p = d * (d - 1) // 2
 
 	# Set up tensors
-	NX_t = torch.tensor(NX, dtype = dtype)
-	Z_t = torch.tensor(Z, dtype = dtype)
+	NX_t = torch.tensor(NX, dtype = control["dtype"])
+	Z_t = torch.tensor(Z, dtype = control["dtype"])
 
 	# Set initial coefficients all to zero
 	beta = torch.zeros(
         size = (L, p),
-        dtype = dtype,
+        dtype = control["dtype"],
         requires_grad = True
     )
 
 	optimizer = torch.optim.LBFGS(
 		[beta],
 		line_search_fn = "strong_wolfe",
-		max_iter = max_iter,
-		history_size = history_size,
-		tolerance_grad = tolerance_grad,
-		tolerance_change = tolerance_change
+		max_iter = control["max_iter"],
+		history_size = control["history_size"],
+		tolerance_grad = control["tolerance_grad"],
+		tolerance_change = control["tolerance_change"]
 	)
     
 	def closure():
@@ -75,7 +67,7 @@ def fit_gaussian_glm(
 		    NX = NX_t,
 		    Z = Z_t,
 		    lam = lam,
-		    dtype = dtype
+		    dtype = control["dtype"]
 		)
 		loss.backward()
 		return loss
@@ -118,16 +110,7 @@ def gaussian_glm_cv(
 	    Cross-validated log-likelihood.
 	"""
 	
-	max_iter = int(control["max_itr"])
-	history_size = int(control["history_size"])
-	tolerance_grad = float(control["tolerance_grad"])
-	tolerance_change = float(control["tolerance_change"])
-	dtype = control["precision"]
-
-	if dtype == "float32":
-	    dtype = torch.float32
-	else:
-	    dtype = torch.float64
+	control = _parse_control(control)
 	    
 	N, d = NX.shape
 	L = Z.shape[1]
@@ -151,7 +134,7 @@ def gaussian_glm_cv(
 	# Set initial coefficients all to zero
 	beta = torch.zeros(
         size = (L, p),
-        dtype = dtype,
+        dtype = control["dtype"],
         requires_grad = True
     )
     
@@ -159,10 +142,10 @@ def gaussian_glm_cv(
 	optimizer = torch.optim.LBFGS(
 		[beta],
 		line_search_fn = "strong_wolfe",
-		max_iter = max_iter,
-		history_size = history_size,
-		tolerance_grad = tolerance_grad,
-		tolerance_change = tolerance_change
+		max_iter = control["max_iter"],
+		history_size = control["history_size"],
+		tolerance_grad = control["tolerance_grad"],
+		tolerance_change = control["tolerance_change"]
 	)
 	
 	def closure():
@@ -172,7 +155,7 @@ def gaussian_glm_cv(
 		    NX = NX_train,
 		    Z = Z_train,
 		    lam = lam,
-		    dtype = dtype
+		    dtype = control["dtype"]
 		)
 		loss.backward()
 		return loss
@@ -191,7 +174,7 @@ def gaussian_glm_cv(
 	log2pi = math.log(2 * math.pi)
 	margin_ll = (-0.5 * (log2pi + NX_test * NX_test)).sum(dim = 1)
 	# Copula log-likelihood
-	copula_ll = _log_mvn_density(NX_test, H_test, dtype)
+	copula_ll = _log_mvn_density(NX_test, H_test, control["dtype"])
 	# Average model log-likelihood
 	ll = torch.sum(copula_ll - margin_ll) / margin_ll.shape[0]
 	
