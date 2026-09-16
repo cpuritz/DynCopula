@@ -14,5 +14,5 @@ A \code{d}x\code{d} correlation matrix.
 }
 \description{
 Convert an unconstrained vector to a correlation matrix. This is
-the inverse of \link[DynCopula]{cor2vec}.
+the inverse of \link[gamgc]{cor2vec}.
 }

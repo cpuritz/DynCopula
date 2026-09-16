@@ -3,7 +3,7 @@
 #' Correlation matrix to vector
 #'
 #' @description Convert a correlation matrix to an unconstrained vector. This is
-#' the inverse of \link[DynCopula]{vec2cor}.
+#' the inverse of \link[gamgc]{vec2cor}.
 #'
 #' @param R A \code{d}x\code{d} correlation matrix.
 #'
@@ -39,7 +39,7 @@ cor2vec <- function(R) {
 #' Vector to correlation matrix
 #'
 #' @description Convert an unconstrained vector to a correlation matrix. This is
-#' the inverse of \link[DynCopula]{cor2vec}.
+#' the inverse of \link[gamgc]{cor2vec}.
 #'
 #' @param v A vector of length \code{choose(d, 2)}.
 #'

@@ -16,7 +16,7 @@
 
 \item{design}{A \code{data.frame} specifying the new design matrix. Must
 include the same columns as in the design matrix in the original
-\link[DynCopula]{fit_gamgc} call.}
+\link[gamgc]{fit_gamgc} call.}
 
 \item{type}{The type of prediction to return The default option
 \code{"response"} returns a \code{matrix} of correlation coefficients, with
@@ -41,7 +41,7 @@ Gaussian copula model.
 }
 \examples{
 \dontrun{
-library(DynCopula)
+library(gamgc)
 library(copula)
 set.seed(0)
 

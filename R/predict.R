@@ -8,7 +8,7 @@
 #' @param object A fitted object of class \code{gamGaussianCopula}.
 #' @param design A \code{data.frame} specifying the new design matrix. Must
 #' include the same columns as in the design matrix in the original
-#' \link[DynCopula]{fit_gamgc} call.
+#' \link[gamgc]{fit_gamgc} call.
 #' @param type The type of prediction to return The default option
 #' \code{"response"} returns a \code{matrix} of correlation coefficients, with
 #' rows corresponding to rows in \code{design} and columns corresponding to
@@ -26,7 +26,7 @@
 #'
 #' @examples
 #' \dontrun{
-#' library(DynCopula)
+#' library(gamgc)
 #' library(copula)
 #' set.seed(0)
 #'

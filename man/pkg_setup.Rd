@@ -4,11 +4,11 @@
 \alias{pkg_setup}
 \title{Setup the package}
 \usage{
-pkg_setup(envname = "r-dyn-copula", torch_version = "torch")
+pkg_setup(envname = "r-gamgc", torch_version = "torch")
 }
 \arguments{
 \item{envname}{Name of the virtual environment to create. Default is
-\code{"r-dyn-copula"}. An existing environment with this name will be removed
+\code{"r-gamgc"}. An existing environment with this name will be removed
 and recreated.}
 
 \item{torch_version}{PyTorch version constraint passed to pip, e.g.
@@ -19,7 +19,7 @@ and recreated.}
 Nothing, called for side effects.
 }
 \description{
-Creates a dedicated Python virtual environment for DynCopula,
+Creates a dedicated Python virtual environment for gamgc,
 installs the required Python dependencies (NumPy and PyTorch), and saves the
 configuration for future sessions.
 }
@@ -30,11 +30,11 @@ This function:
   \item Installs NumPy and PyTorch (CPU build) into that environment via pip.
   \item Verifies the installations by importing both modules.
   \item Writes the environment name to a JSON config file in
-    \code{rappdirs::user_config_dir("DynCopula")} so that future sessions
+    \code{rappdirs::user_config_dir("gamgc")} so that future sessions
     activate it automatically.
 }
 
-Call this function once after installing DynCopula. Restart R afterwards.
+Call this function once after installing gamgc. Restart R afterwards.
 The environment is self-contained and will not affect other Python
 installations on your system.
 }

@@ -1,1 +1,1 @@
-DynCopula project
+gamgc project

@@ -75,7 +75,7 @@
 #'
 #' @examples
 #' \dontrun{
-#' library(DynCopula)
+#' library(gamgc)
 #' library(copula)
 #' set.seed(0)
 #'
@@ -231,7 +231,7 @@ fit_gamgc <- function(FX,
     run_parallel <- (cores > 1L) && run_cv
 
     # Location of Python files
-    py_path <- system.file("python", package = "DynCopula")
+    py_path <- system.file("python", package = "gamgc")
 
     # Since Python functions are not serializable, we can't load the
     # optimization functions in the global environment. Instead, the functions
@@ -476,7 +476,7 @@ fit_gamgc <- function(FX,
     )
 
     # Location of Python files
-    py_path <- system.file("python", package = "DynCopula")
+    py_path <- system.file("python", package = "gamgc")
 
     # Since Python functions are not serializable, we can't load the
     # optimization functions in the global environment. Instead, the functions

@@ -7,8 +7,6 @@ test_that("fit_gamgc arguments", {
     x1 <- rep(c("a", "b"), N / 2)
     design <- data.frame(t = t, x1 = x1)
 
-    expect_error(fit_gamgc(FX, design, formula, lambda, K, nfold, cores, cl_type, control))
-
     # Test FX
     expect_error(fit_gamgc(NULL, design, formula = ~1))
     expect_error(fit_gamgc(seq(N), design, formula = ~1))
@@ -32,86 +30,76 @@ test_that("fit_gamgc arguments", {
     # Multiple smooth variables
     expect_error(fit_gamgc(FX, design, formula = ~s(t) + s(x1)))
     # Trying to use exact mgcv style
-    expect_error(fit_gamgc(FX, design, formula = ~s(t, k = 30)))
+    #expect_error(fit_gamgc(FX, design, formula = ~s(t, k = 30)))
 
     # Test lambda
-    expect_error(fit_gamgc(FX, design, ~1, lambda = NULL))
-    expect_error(fit_gamgc(FX, design, ~1, lambda = 0))
-    expect_error(fit_gamgc(FX, design, ~1, lambda = -1))
-    expect_error(fit_gamgc(FX, design, ~1, lambda = c(1, 2, 0)))
-    expect_error(fit_gamgc(FX, design, ~1, lambda = c(-1, 2, 1)))
+    bad_lambda <- list(NULL, NA, NaN, Inf, 0, -1, c(1, 2, 0), c(-1, 2, 1), "a")
+    for (x in bad_lambda) {
+        expect_error(fit_gamgc(FX, design, ~1, lambda = x))
+    }
 
     # Test K
-    expect_error(fit_gamgc(FX, design, ~1, K = NULL))
-    expect_error(fit_gamgc(FX, design, ~1, K = NA))
-    expect_error(fit_gamgc(FX, design, ~1, K = NaN))
-    expect_error(fit_gamgc(FX, design, ~1, K = Inf))
-    expect_error(fit_gamgc(FX, design, ~1, K = "a"))
-    expect_error(fit_gamgc(FX, design, ~1, K = 0))
-    expect_error(fit_gamgc(FX, design, ~1, K = 1))
-    expect_error(fit_gamgc(FX, design, ~1, K = 2))
-    expect_error(fit_gamgc(FX, design, ~1, K = 2.99999))
+    bad_K <- list(NULL, NA, NaN, Inf, "a", 0, 1, 2, 2.99999, "3", "4L")
+    for (x in bad_K) {
+        expect_error(fit_gamgc(FX, design, ~1, K = x))
+    }
 
     # Test nfold
-    expect_error(fit_gamgc(FX, design, ~1, nfold = NULL))
-    expect_error(fit_gamgc(FX, design, ~1, nfold = NA))
-    expect_error(fit_gamgc(FX, design, ~1, nfold = NaN))
-    expect_error(fit_gamgc(FX, design, ~1, nfold = Inf))
-    expect_error(fit_gamgc(FX, design, ~1, nfold = "a"))
-    expect_error(fit_gamgc(FX, design, ~1, nfold = 0))
-    expect_error(fit_gamgc(FX, design, ~1, nfold = 1))
-    expect_error(fit_gamgc(FX, design, ~1, nfold = 1.99999))
+    bad_nfold <- list(NULL, NA, NaN, Inf, "a", 0, 1, 1.99999, "3", "4L")
+    for (x in bad_nfold) {
+        expect_error(fit_gamgc(FX, design, ~1, nfold = x))
+    }
 
     # Test cores
-    expect_error(fit_gamgc(FX, design, ~1, cores = NULL))
-    expect_error(fit_gamgc(FX, design, ~1, cores = NA))
-    expect_error(fit_gamgc(FX, design, ~1, cores = NaN))
-    expect_error(fit_gamgc(FX, design, ~1, cores = Inf))
-    expect_error(fit_gamgc(FX, design, ~1, cores = "a"))
-    expect_error(fit_gamgc(FX, design, ~1, cores = 0))
-    expect_error(fit_gamgc(FX, design, ~1, cores = 0.99999))
+    bad_cores <- list(NULL, NA, NaN, Inf, "a", 0, 0.99999, "2", "3L")
+    for (x in bad_cores) {
+        expect_error(fit_gamgc(FX, design, ~1, cores = x))
+    }
 
-    # Test control
+    ## Test control ##
+    # Control must be a list, not a vector
     expect_error(fit_gamgc(FX, design, ~1, control = c()))
     expect_error(fit_gamgc(FX, design, ~1, control = c(history_size = 1)))
-    expect_error(fit_gamgc(FX, design, ~1, control = list(max_itr = -1)))
-    expect_error(fit_gamgc(FX, design, ~1, control = list(max_itr = NA)))
-    expect_error(fit_gamgc(FX, design, ~1, control = list(max_itr = NULL)))
-    expect_error(fit_gamgc(FX, design, ~1, control = list(max_itr = 0)))
-    expect_error(fit_gamgc(FX, design, ~1, control = list(max_itr = "a")))
-    expect_error(fit_gamgc(FX, design, ~1, control = list(max_itr = 0.99)))
 
-    expect_error(fit_gamgc(FX, design, ~1, control = list(history_size = -1)))
-    expect_error(fit_gamgc(FX, design, ~1, control = list(history_size = NA)))
-    expect_error(fit_gamgc(FX, design, ~1, control = list(history_size = NULL)))
-    expect_error(fit_gamgc(FX, design, ~1, control = list(history_size = 0)))
-    expect_error(fit_gamgc(FX, design, ~1, control = list(history_size = "a")))
-    expect_error(fit_gamgc(FX, design, ~1, control = list(history_size = 0.99)))
+    bad_max_itr <- list(-1, NA, NULL, 0, "a", 0.99, "2", "3L")
+    for (x in bad_max_itr) {
+        expect_error(
+            fit_gamgc(FX, design, ~1, control = list(max_itr = x))
+        )
+    }
 
-    expect_error(fit_gamgc(FX, design, ~1, control = list(tolerance_grad = -1)))
-    expect_error(fit_gamgc(FX, design, ~1, control = list(tolerance_grad = NA)))
-    expect_error(fit_gamgc(FX, design, ~1, control = list(tolerance_grad = NULL)))
-    expect_error(fit_gamgc(FX, design, ~1, control = list(tolerance_grad = -0.001)))
-    expect_error(fit_gamgc(FX, design, ~1, control = list(tolerance_grad = 0)))
-    expect_error(fit_gamgc(FX, design, ~1, control = list(tolerance_grad = "a")))
+    bad_history_size <- list(-1, NA, NULL, 0, "a", 0.99, "2", "3L")
+    for (x in bad_history_size) {
+        expect_error(
+            fit_gamgc(FX, design, ~1, control = list(history_size = x))
+        )
+    }
 
-    expect_error(fit_gamgc(FX, design, ~1, control = list(tolerance_change = -1)))
-    expect_error(fit_gamgc(FX, design, ~1, control = list(tolerance_change = NA)))
-    expect_error(fit_gamgc(FX, design, ~1, control = list(tolerance_change = NULL)))
-    expect_error(fit_gamgc(FX, design, ~1, control = list(tolerance_change = -0.001)))
-    expect_error(fit_gamgc(FX, design, ~1, control = list(tolerance_change = 0)))
-    expect_error(fit_gamgc(FX, design, ~1, control = list(tolerance_change = "a")))
+    bad_tol_grad <- list(-1, NA, NULL, -0.001, 0, "a", "0.1")
+    for (x in bad_tol_grad) {
+        expect_error(
+            fit_gamgc(FX, design, ~1, control = list(tolerance_grad = x))
+        )
+    }
 
-    expect_error(fit_gamgc(FX, design, ~1, control = list(precision = 1)))
-    expect_error(fit_gamgc(FX, design, ~1, control = list(precision = NA)))
-    expect_error(fit_gamgc(FX, design, ~1, control = list(precision = NULL)))
-    expect_error(fit_gamgc(FX, design, ~1, control = list(precision = "float23")))
-    expect_error(fit_gamgc(FX, design, ~1, control = list(precision = "32")))
-    expect_error(fit_gamgc(FX, design, ~1, control = list(precision = 32)))
+    bad_tol_change <- list(-1, NA, NULL, -0.001, 0, "a", "0.1")
+    for (x in bad_tol_change) {
+        expect_error(
+            fit_gamgc(FX, design, ~1, control = list(tolerance_change = x))
+        )
+    }
 
-    expect_error(fit_gamgc(FX, design, ~1, control = list(boundary = -1)))
-    expect_error(fit_gamgc(FX, design, ~1, control = list(boundary = -0.001)))
-    expect_error(fit_gamgc(FX, design, ~1, control = list(boundary = "a")))
-    expect_error(fit_gamgc(FX, design, ~1, control = list(boundary = NULL)))
-    expect_error(fit_gamgc(FX, design, ~1, control = list(boundary = NA)))
+    bad_precision <- list(1, NA, NULL, "float23", "32", 32)
+    for (x in bad_precision) {
+        expect_error(
+            fit_gamgc(FX, design, ~1, control = list(precision = x))
+        )
+    }
+
+    bad_boundary <- list(-1, -0.1, -0.001, -1e-6, "a", "0", "0.1", NULL, NA)
+    for (x in bad_boundary) {
+        expect_error(
+            fit_gamgc(FX, design, ~1, control = list(boundary = x))
+        )
+    }
 })

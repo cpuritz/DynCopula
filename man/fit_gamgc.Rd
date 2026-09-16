@@ -100,7 +100,7 @@ Any control parameters not specified are replaced by their default values.
 }
 \examples{
 \dontrun{
-library(DynCopula)
+library(gamgc)
 library(copula)
 set.seed(0)
 

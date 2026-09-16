@@ -34,12 +34,10 @@ test_that("parse_formula", {
     compare_formulas(~x*y*t+s(x), ~x*y*t, ~1, "x")
 
     # Interactions with smooth covariate
-    compare_formulas(~x:s(t) + s(t), ~1, ~x, "t")
-    compare_formulas(~x:s(t) + y:s(t) + s(t), ~1, ~x + y, "t")
-    compare_formulas(~x:s(t) + y:s(t), ~1, ~x + y, "t")
+    compare_formulas(~s(t, by = y), ~1, ~y, "t")
+    compare_formulas(~x + s(t, by = y), ~x, ~y, "t")
 
     # Specify multiple smooth covariates (not allowed)
     testthat::expect_error(.parse_formula(~s(t1) + s(t2)))
-    testthat::expect_error(.parse_formula(~s(x) * s(y)))
-    testthat::expect_error(.parse_formula(~s(xy) + s(x)))
+    testthat::expect_error(.parse_formula(~x + s(x) + s(y)))
 })

@@ -14,5 +14,5 @@ A vector of length \code{choose(d, 2)}.
 }
 \description{
 Convert a correlation matrix to an unconstrained vector. This is
-the inverse of \link[DynCopula]{vec2cor}.
+the inverse of \link[gamgc]{vec2cor}.
 }

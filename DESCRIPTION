@@ -1,11 +1,8 @@
-Package: DynCopula
+Package: gamgc
 Type: Package
-Title: What the Package Does (Title Case)
+Title: gamgc: Generalized Additive Model of Gaussian Copulas
 Version: 0.1.0
-Author: Who wrote it
-Maintainer: The package maintainer <yourself@somewhere.net>
-Description: More about what it does (maybe more than one line)
-    Use four spaces when indenting paragraphs within the Description.
+Description: An implementation of a generalized additive model of Gaussian copulas.
 License: MIT + file LICENSE
 Encoding: UTF-8
 LazyData: true
@@ -15,21 +12,22 @@ Imports:
     copula,
     future,
     future.apply,
-    gamlss,
-    gamlss.dist,
     jsonlite,
-    Matrix,
     methods,
     parallel,
     progressr,
     rappdirs,
     reticulate,
     S4Vectors,
-    SingleCellExperiment,
     snow,
     splines,
     stats,
-    SummarizedExperiment,
     testthat,
     utils
 Config/testthat/edition: 3
+Authors@R: c(
+    person("Connor", "Puritz", , "connorpuritz@gmail.com", role = c("aut", "cre"),
+           comment = c(ORCID = "0000-0001-7602-0444")),
+    person("Rosemary", "Braun", , "rbraun@northwestern.edu", role = c("ctb", "ths"),
+           comment = c(ORCID = "0000-0001-9668-9866"))
+  )

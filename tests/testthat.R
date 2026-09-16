@@ -7,6 +7,6 @@
 # * https://testthat.r-lib.org/articles/special-files.html
 
 library(testthat)
-library(DynCopula)
+library(gamgc)
 
-test_check("DynCopula")
+test_check("gamgc")
