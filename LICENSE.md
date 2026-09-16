@@ -1,6 +1,6 @@
 # MIT License
 
-Copyright (c) 2025 Connor Puritz
+Copyright (c) 2026 Connor Puritz
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
